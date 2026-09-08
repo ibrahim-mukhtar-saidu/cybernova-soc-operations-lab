@@ -1,0 +1,4 @@
+# CYBERNOVA SOC Operations Lab
+#
+# Runtime dependencies will be added only when required
+# by implemented laboratory components.
