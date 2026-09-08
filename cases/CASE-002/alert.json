@@ -1,0 +1,69 @@
+{
+  "schema_version": "1.0",
+  "generated_by": "CYBERNOVA SOC Detection Engine",
+  "detection_id": "DET-AUTH-002",
+  "alert_count": 1,
+  "alerts": [
+    {
+      "alert_id": "ALERT-CASE-002-DET-AUTH-002",
+      "detection_id": "DET-AUTH-002",
+      "detection_name": "Password Spraying Authentication Detection",
+      "detection_version": "1.0",
+      "status": "open",
+      "severity": "high",
+      "confidence": "high",
+      "evidence_classification": "observed_evidence",
+      "event_type": "authentication",
+      "protocol": "ssh",
+      "host": "lab-auth-01",
+      "source_ip": "198.51.100.40",
+      "targeted_user_count": 7,
+      "targeted_users": [
+        "alice",
+        "bob",
+        "carol",
+        "david",
+        "erin",
+        "frank",
+        "grace"
+      ],
+      "failed_attempt_count": 13,
+      "authentication_method": "password",
+      "threshold": {
+        "minimum_failed_attempts": 6,
+        "minimum_distinct_users": 6,
+        "window_minutes": 5
+      },
+      "first_seen": "2026-09-08T10:00:03Z",
+      "last_seen": "2026-09-08T10:04:28Z",
+      "successful_authentication_observed": true,
+      "successful_authentication_event_id": "EVT-002008",
+      "successful_authentication_user": "alice",
+      "supporting_event_ids": [
+        "EVT-002001",
+        "EVT-002002",
+        "EVT-002003",
+        "EVT-002004",
+        "EVT-002005",
+        "EVT-002006",
+        "EVT-002007",
+        "EVT-002009",
+        "EVT-002010",
+        "EVT-002011",
+        "EVT-002012",
+        "EVT-002013",
+        "EVT-002014",
+        "EVT-002008"
+      ],
+      "rationale": "Observed 13 failed password SSH authentication attempts from 198.51.100.40 against 7 distinct users within 5 minutes, followed by a successful SSH authentication for user 'alice'. The success is observed telemetry and does not independently prove account compromise.",
+      "mitre_attack": {
+        "tactic": "credential-access",
+        "technique": "T1110",
+        "subtechnique": "T1110.003",
+        "name": "Password Spraying"
+      },
+      "analyst_interpretation": "The telemetry is consistent with a password-spraying authentication pattern because one source attempted password authentication against multiple distinct accounts within a short time window. The observed successful authentication increases investigation priority but does not independently establish account compromise.",
+      "recommended_action": "Validate whether the source and authentication activity were authorized. Review identity, endpoint, and network telemetry for the targeted account, preserve the supporting events, and investigate the successful authentication for user 'alice'."
+    }
+  ]
+}
