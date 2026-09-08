@@ -1,0 +1,147 @@
+detection_id: DET-ENDPOINT-001
+name: Suspicious PowerShell Execution
+description: >
+  Detects PowerShell process execution associated with encoded commands
+  and additional suspicious execution characteristics such as hidden
+  windows, Office application parent processes, outbound network activity,
+  or follow-on child-process execution.
+
+version: "1.0"
+status: experimental
+severity: medium
+confidence: medium
+
+log_source:
+  product: windows
+  category: process_creation
+
+required_fields:
+  - event_id
+  - timestamp
+  - event_type
+  - source
+  - host
+  - user
+  - process
+  - command_line
+  - metadata
+
+selection:
+  process:
+    - powershell.exe
+    - powershell_ise.exe
+
+  encoded_command:
+    command_line_contains:
+      - "-EncodedCommand"
+      - "-enc "
+
+  suspicious_parent:
+    parent_process:
+      - winword.exe
+      - excel.exe
+      - outlook.exe
+      - msaccess.exe
+      - powerpnt.exe
+
+  hidden_window:
+    command_line_contains:
+      - "-WindowStyle Hidden"
+      - "-w hidden"
+
+  encoded_metadata:
+    metadata:
+      command_type: encoded_command
+      encoding: base64
+
+condition: >
+  process AND
+  (encoded_command OR encoded_metadata) AND
+  (suspicious_parent OR hidden_window OR
+   correlated_network_activity OR correlated_child_process)
+
+correlation:
+  enabled: true
+  correlation_key:
+    - host
+    - user
+  process_id_field: metadata.process_id
+  parent_process_id_field: metadata.parent_pid
+  network_event_types:
+    - network_connection
+  child_process_event_types:
+    - process_creation
+  correlation_window_minutes: 5
+
+scoring:
+  base_score: 40
+  indicators:
+    encoded_command: 25
+    encoded_metadata: 15
+    suspicious_parent: 20
+    hidden_window: 15
+    correlated_network_activity: 20
+    correlated_child_process: 10
+  maximum_score: 100
+
+escalation:
+  high:
+    minimum_score: 70
+    rationale: >
+      Multiple correlated indicators substantially increase the likelihood
+      of malicious or unauthorized PowerShell execution.
+
+false_positive_conditions:
+  - Authorized administrative PowerShell scripts using encoded commands.
+  - Security or endpoint-management tooling using encoded PowerShell.
+  - Approved automation launched from Office applications.
+  - Laboratory simulations intentionally generating encoded PowerShell activity.
+
+false_negative_conditions:
+  - PowerShell commands that do not use encoded-command syntax.
+  - Obfuscated execution using alternative PowerShell techniques.
+  - Missing or incomplete process lineage telemetry.
+  - Network activity not captured by the endpoint telemetry source.
+  - Child-process events occurring outside the correlation window.
+
+testing:
+  positive_dataset:
+    - telemetry/endpoint/CASE-003-endpoint-events.jsonl
+  expected_suspicious_events:
+    - EVT-003006
+    - EVT-003007
+  expected_correlations:
+    network:
+      - EVT-003008
+    child_process:
+      - EVT-003009
+  negative_events:
+    - EVT-003001
+    - EVT-003002
+    - EVT-003004
+    - EVT-003005
+    - EVT-003010
+
+mitre_attack:
+  tactics:
+    - Execution
+  techniques:
+    - id: T1059.001
+      name: PowerShell
+
+evidence_classification:
+  primary: observed_evidence
+  interpretation_required: true
+
+analyst_guidance:
+  initial_triage:
+    - Identify the executing user and host.
+    - Review the complete PowerShell command line.
+    - Decode the encoded command only in the authorized laboratory environment.
+    - Inspect the parent process and process lineage.
+    - Correlate network connections using the PowerShell process ID.
+    - Identify child processes spawned by the PowerShell process.
+  recommended_action:
+    - Validate whether the execution was authorized.
+    - Preserve relevant endpoint and network evidence.
+    - Escalate when multiple independent indicators correlate.

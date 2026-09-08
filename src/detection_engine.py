@@ -6,9 +6,10 @@ Detection Engine
 Implemented detections:
     DET-AUTH-001 - SSH Brute-Force Authentication Detection
     DET-AUTH-002 - Password Spraying Authentication Detection
+    DET-ENDPOINT-001 - Suspicious PowerShell Execution
 
 Purpose:
-    Read normalized authentication telemetry, validate the input,
+    Read normalized telemetry, validate the input,
     evaluate supported detection rules, and generate deterministic
     structured alerts.
 
@@ -54,7 +55,18 @@ AUTH_002_MIN_DISTINCT_USERS = 6
 AUTH_002_WINDOW_MINUTES = 5
 
 
-REQUIRED_FIELDS = {
+# ---------------------------------------------------------------------------
+# DET-ENDPOINT-001: Suspicious PowerShell
+# ---------------------------------------------------------------------------
+
+DETECTION_ENDPOINT_001 = "DET-ENDPOINT-001"
+DETECTION_ENDPOINT_001_NAME = "Suspicious PowerShell Execution"
+DETECTION_ENDPOINT_001_VERSION = "1.0"
+
+ENDPOINT_001_CORRELATION_WINDOW_MINUTES = 5
+
+
+AUTH_REQUIRED_FIELDS = {
     "event_id",
     "timestamp",
     "event_type",
@@ -64,6 +76,21 @@ REQUIRED_FIELDS = {
     "source_ip",
     "action",
     "status",
+}
+
+ENDPOINT_REQUIRED_FIELDS = {
+    "event_id",
+    "timestamp",
+    "event_type",
+    "source",
+    "host",
+    "user",
+    "action",
+    "status",
+    "process",
+    "command_line",
+    "file_path",
+    "metadata",
 }
 
 VALID_FAILURE_STATUSES = {"failure"}
@@ -146,15 +173,6 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
                     f"line {line_number}: event must be a JSON object"
                 )
 
-            missing = REQUIRED_FIELDS - set(event)
-
-            if missing:
-                missing_fields = ", ".join(sorted(missing))
-                raise TelemetryValidationError(
-                    f"line {line_number}: missing required fields: "
-                    f"{missing_fields}"
-                )
-
             event_id = event["event_id"]
 
             if not isinstance(event_id, str) or not event_id.strip():
@@ -193,24 +211,57 @@ def validate_event_fields(
     event: dict[str, Any],
     line_number: int,
 ) -> None:
-    """Validate fields required for authentication detection."""
+    """Validate fields according to the telemetry event type."""
 
-    if event["event_type"] != "authentication":
-        return
+    if event["event_type"] == "authentication":
+        missing = AUTH_REQUIRED_FIELDS - set(event)
 
-    for field in ("host", "user", "source_ip"):
-        if (
-            not isinstance(event[field], str)
-            or not event[field].strip()
-        ):
+        if missing:
+            missing_fields = ", ".join(sorted(missing))
             raise TelemetryValidationError(
-                f"line {line_number}: {field} must be non-empty"
+                f"line {line_number}: missing authentication fields: "
+                f"{missing_fields}"
             )
 
-    for field in ("status", "action"):
-        if not isinstance(event[field], str):
+        for field in ("host", "user", "source_ip"):
+            if (
+                not isinstance(event[field], str)
+                or not event[field].strip()
+            ):
+                raise TelemetryValidationError(
+                    f"line {line_number}: {field} must be non-empty"
+                )
+
+        for field in ("status", "action"):
+            if not isinstance(event[field], str):
+                raise TelemetryValidationError(
+                    f"line {line_number}: {field} must be a string"
+                )
+
+        return
+
+    if event["source"] == "endpoint":
+        missing = ENDPOINT_REQUIRED_FIELDS - set(event)
+
+        if missing:
+            missing_fields = ", ".join(sorted(missing))
             raise TelemetryValidationError(
-                f"line {line_number}: {field} must be a string"
+                f"line {line_number}: missing endpoint fields: "
+                f"{missing_fields}"
+            )
+
+        if event["event_type"] not in {
+            "process_creation",
+            "network_connection",
+        }:
+            raise TelemetryValidationError(
+                f"line {line_number}: unsupported endpoint event_type: "
+                f"{event['event_type']}"
+            )
+
+        if not isinstance(event["metadata"], dict):
+            raise TelemetryValidationError(
+                f"line {line_number}: endpoint metadata must be an object"
             )
 
 
@@ -739,6 +790,356 @@ def detect_auth_002(
 
 
 # ---------------------------------------------------------------------------
+# DET-ENDPOINT-001
+# ---------------------------------------------------------------------------
+
+
+def endpoint_process_name(event: dict[str, Any]) -> str:
+    """Return a normalized endpoint process name."""
+
+    return str(event.get("process") or "").lower()
+
+
+def endpoint_command_line(event: dict[str, Any]) -> str:
+    """Return a normalized endpoint command line."""
+
+    return str(event.get("command_line") or "").lower()
+
+
+def endpoint_metadata(event: dict[str, Any]) -> dict[str, Any]:
+    """Return endpoint metadata when it is a dictionary."""
+
+    metadata = event.get("metadata")
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def is_powershell_event(event: dict[str, Any]) -> bool:
+    """Identify PowerShell process creation events."""
+
+    return (
+        event.get("source") == "endpoint"
+        and event.get("event_type") == "process_creation"
+        and endpoint_process_name(event)
+        in {"powershell.exe", "powershell_ise.exe"}
+    )
+
+
+def has_encoded_command(event: dict[str, Any]) -> bool:
+    """Identify encoded PowerShell command indicators."""
+
+    command_line = endpoint_command_line(event)
+    metadata = endpoint_metadata(event)
+
+    return (
+        "-encodedcommand" in command_line
+        or "-enc " in command_line
+        or (
+            str(metadata.get("command_type") or "").lower()
+            == "encoded_command"
+            and str(metadata.get("encoding") or "").lower()
+            == "base64"
+        )
+    )
+
+
+def has_suspicious_parent(event: dict[str, Any]) -> bool:
+    """Identify suspicious Office parent processes."""
+
+    metadata = endpoint_metadata(event)
+    parent = str(
+        metadata.get("parent_process") or ""
+    ).lower()
+
+    return parent in {
+        "winword.exe",
+        "excel.exe",
+        "outlook.exe",
+        "msaccess.exe",
+        "powerpnt.exe",
+    }
+
+
+def has_hidden_window(event: dict[str, Any]) -> bool:
+    """Identify hidden PowerShell execution."""
+
+    command_line = endpoint_command_line(event)
+
+    return (
+        "-windowstyle hidden" in command_line
+        or "-w hidden" in command_line
+        or str(
+            endpoint_metadata(event).get("window_style") or ""
+        ).lower() == "hidden"
+    )
+
+
+def get_process_id(event: dict[str, Any]) -> str | None:
+    """Return the endpoint process ID as a normalized string."""
+
+    value = endpoint_metadata(event).get("process_id")
+
+    if value is None:
+        return None
+
+    return str(value)
+
+
+def has_correlated_network_activity(
+    events: list[dict[str, Any]],
+    process_event: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Find network activity associated with the PowerShell process."""
+
+    process_id = get_process_id(process_event)
+
+    if process_id is None:
+        return None
+
+    start = process_event["_parsed_timestamp"]
+    end = start + timedelta(
+        minutes=ENDPOINT_001_CORRELATION_WINDOW_MINUTES
+    )
+
+    for event in events:
+        if event.get("event_type") != "network_connection":
+            continue
+
+        if event.get("host") != process_event.get("host"):
+            continue
+
+        if event.get("user") != process_event.get("user"):
+            continue
+
+        if get_process_id(event) != process_id:
+            continue
+
+        timestamp = event["_parsed_timestamp"]
+
+        if start <= timestamp <= end:
+            return event
+
+    return None
+
+
+def has_correlated_child_process(
+    events: list[dict[str, Any]],
+    process_event: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Find a child process associated with the PowerShell process."""
+
+    process_id = get_process_id(process_event)
+
+    if process_id is None:
+        return None
+
+    start = process_event["_parsed_timestamp"]
+    end = start + timedelta(
+        minutes=ENDPOINT_001_CORRELATION_WINDOW_MINUTES
+    )
+
+    for event in events:
+        if event.get("event_type") != "process_creation":
+            continue
+
+        if event.get("host") != process_event.get("host"):
+            continue
+
+        if event.get("user") != process_event.get("user"):
+            continue
+
+        metadata = endpoint_metadata(event)
+
+        if str(metadata.get("parent_pid")) != process_id:
+            continue
+
+        timestamp = event["_parsed_timestamp"]
+
+        if start <= timestamp <= end:
+            return event
+
+    return None
+
+
+def build_endpoint_001_alert(
+    process_event: dict[str, Any],
+    network_event: dict[str, Any] | None,
+    child_process_event: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Build a DET-ENDPOINT-001 alert."""
+
+    encoded = has_encoded_command(process_event)
+    suspicious_parent = has_suspicious_parent(process_event)
+    hidden = has_hidden_window(process_event)
+
+    score = 40
+
+    if encoded:
+        score += 25
+
+    metadata = endpoint_metadata(process_event)
+
+    if (
+        str(metadata.get("command_type") or "").lower()
+        == "encoded_command"
+    ):
+        score += 15
+
+    if suspicious_parent:
+        score += 20
+
+    if hidden:
+        score += 15
+
+    if network_event is not None:
+        score += 20
+
+    if child_process_event is not None:
+        score += 10
+
+    score = min(score, 100)
+
+    severity = "high" if score >= 70 else "medium"
+    confidence = "high" if score >= 70 else "medium"
+
+    supporting_event_ids = [process_event["event_id"]]
+
+    if network_event is not None:
+        supporting_event_ids.append(network_event["event_id"])
+
+    if child_process_event is not None:
+        supporting_event_ids.append(
+            child_process_event["event_id"]
+        )
+
+    indicators: list[str] = []
+
+    if encoded:
+        indicators.append("encoded_command")
+
+    if suspicious_parent:
+        indicators.append("suspicious_parent")
+
+    if hidden:
+        indicators.append("hidden_window")
+
+    if network_event is not None:
+        indicators.append("correlated_network_activity")
+
+    if child_process_event is not None:
+        indicators.append("correlated_child_process")
+
+    return {
+        "alert_id": (
+            f"ALERT-{process_event['event_id']}-DET-ENDPOINT-001"
+        ),
+        "detection_id": DETECTION_ENDPOINT_001,
+        "detection_name": DETECTION_ENDPOINT_001_NAME,
+        "detection_version": DETECTION_ENDPOINT_001_VERSION,
+        "status": "open",
+        "severity": severity,
+        "confidence": confidence,
+        "evidence_classification": "observed_evidence",
+        "event_type": "process_creation",
+        "host": process_event["host"],
+        "user": process_event["user"],
+        "process": process_event["process"],
+        "process_id": metadata.get("process_id"),
+        "parent_process": metadata.get("parent_process"),
+        "command_line": process_event["command_line"],
+        "risk_score": score,
+        "indicators": indicators,
+        "correlation_window_minutes": (
+            ENDPOINT_001_CORRELATION_WINDOW_MINUTES
+        ),
+        "network_event_id": (
+            network_event["event_id"]
+            if network_event
+            else None
+        ),
+        "child_process_event_id": (
+            child_process_event["event_id"]
+            if child_process_event
+            else None
+        ),
+        "supporting_event_ids": supporting_event_ids,
+        "rationale": (
+            "Observed PowerShell execution with an encoded command "
+            "and additional correlated execution indicators: "
+            + ", ".join(indicators)
+            + ". This is suspicious endpoint telemetry and does not "
+              "independently establish malicious intent or compromise."
+        ),
+        "mitre_attack": {
+            "tactic": "execution",
+            "technique": "T1059",
+            "subtechnique": "T1059.001",
+            "name": "PowerShell",
+        },
+        "analyst_interpretation": (
+            "The observed process lineage and correlated endpoint "
+            "activity are consistent with suspicious PowerShell "
+            "execution. Analyst review should determine whether the "
+            "execution was authorized and whether the decoded command, "
+            "network destination, and child process were expected."
+        ),
+        "recommended_action": (
+            "Validate the executing user and host, preserve the "
+            "supporting endpoint events, review the PowerShell command "
+            "and process lineage, correlate the network destination, "
+            "and escalate for containment consideration if the activity "
+            "is unauthorized."
+        ),
+    }
+
+
+def detect_endpoint_001(
+    events: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Run DET-ENDPOINT-001 against endpoint telemetry."""
+
+    alerts: list[dict[str, Any]] = []
+
+    for event in events:
+        if not is_powershell_event(event):
+            continue
+
+        if not has_encoded_command(event):
+            continue
+
+        network_event = has_correlated_network_activity(
+            events,
+            event,
+        )
+
+        child_process_event = has_correlated_child_process(
+            events,
+            event,
+        )
+
+        suspicious_parent = has_suspicious_parent(event)
+        hidden = has_hidden_window(event)
+
+        if not (
+            suspicious_parent
+            or hidden
+            or network_event is not None
+            or child_process_event is not None
+        ):
+            continue
+
+        alerts.append(
+            build_endpoint_001_alert(
+                process_event=event,
+                network_event=network_event,
+                child_process_event=child_process_event,
+            )
+        )
+
+    return alerts
+
+
+
+# ---------------------------------------------------------------------------
 # Serialization
 # ---------------------------------------------------------------------------
 
@@ -813,6 +1214,7 @@ def parse_args() -> argparse.Namespace:
         choices=(
             DETECTION_AUTH_001,
             DETECTION_AUTH_002,
+            DETECTION_ENDPOINT_001,
         ),
         required=True,
         help="Detection ID to execute.",
@@ -822,7 +1224,7 @@ def parse_args() -> argparse.Namespace:
         "--input",
         required=True,
         type=Path,
-        help="Path to normalized authentication JSONL telemetry.",
+        help="Path to normalized telemetry JSONL.",
     )
 
     parser.add_argument(
@@ -846,6 +1248,9 @@ def run_detection(
 
     if detection_id == DETECTION_AUTH_002:
         return detect_auth_002(events)
+
+    if detection_id == DETECTION_ENDPOINT_001:
+        return detect_endpoint_001(events)
 
     raise ValueError(
         f"unsupported detection: {detection_id}"
@@ -906,9 +1311,15 @@ def main() -> int:
         print(
             f"Severity: {alert['severity']}"
         )
-        print(
-            f"Source IP: {alert['source_ip']}"
-        )
+        if "source_ip" in alert:
+            print(
+                f"Source IP: {alert['source_ip']}"
+            )
+
+        if "host" in alert:
+            print(
+                f"Host: {alert['host']}"
+            )
 
         if "user" in alert:
             print(
@@ -921,15 +1332,28 @@ def main() -> int:
                 f"{alert['targeted_user_count']}"
             )
 
-        print(
-            "Failed attempts: "
-            f"{alert['failed_attempt_count']}"
-        )
+        if "failed_attempt_count" in alert:
+            print(
+                "Failed attempts: "
+                f"{alert['failed_attempt_count']}"
+            )
 
-        print(
-            "Successful authentication observed: "
-            f"{alert['successful_authentication_observed']}"
-        )
+        if "successful_authentication_observed" in alert:
+            print(
+                "Successful authentication observed: "
+                f"{alert['successful_authentication_observed']}"
+            )
+
+        if "risk_score" in alert:
+            print(
+                f"Risk score: {alert['risk_score']}"
+            )
+
+        if "indicators" in alert:
+            print(
+                "Indicators: "
+                + ", ".join(alert["indicators"])
+            )
 
     return 0
 

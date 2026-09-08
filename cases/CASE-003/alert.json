@@ -1,0 +1,87 @@
+{
+  "schema_version": "1.0",
+  "generated_by": "CYBERNOVA SOC Detection Engine",
+  "detection_id": "DET-ENDPOINT-001",
+  "alert_count": 2,
+  "alerts": [
+    {
+      "alert_id": "ALERT-EVT-003006-DET-ENDPOINT-001",
+      "detection_id": "DET-ENDPOINT-001",
+      "detection_name": "Suspicious PowerShell Execution",
+      "detection_version": "1.0",
+      "status": "open",
+      "severity": "high",
+      "confidence": "high",
+      "evidence_classification": "observed_evidence",
+      "event_type": "process_creation",
+      "host": "lab-win-04",
+      "user": "david",
+      "process": "powershell.exe",
+      "process_id": 4632,
+      "parent_process": "winword.exe",
+      "command_line": "powershell.exe -NoProfile -EncodedCommand SQBuAHYAbwBrAGUALQBXAGUAYgBSAGUAcQB1AGUAcwB0AA==",
+      "risk_score": 100,
+      "indicators": [
+        "encoded_command",
+        "suspicious_parent"
+      ],
+      "correlation_window_minutes": 5,
+      "network_event_id": null,
+      "child_process_event_id": null,
+      "supporting_event_ids": [
+        "EVT-003006"
+      ],
+      "rationale": "Observed PowerShell execution with an encoded command and additional correlated execution indicators: encoded_command, suspicious_parent. This is suspicious endpoint telemetry and does not independently establish malicious intent or compromise.",
+      "mitre_attack": {
+        "tactic": "execution",
+        "technique": "T1059",
+        "subtechnique": "T1059.001",
+        "name": "PowerShell"
+      },
+      "analyst_interpretation": "The observed process lineage and correlated endpoint activity are consistent with suspicious PowerShell execution. Analyst review should determine whether the execution was authorized and whether the decoded command, network destination, and child process were expected.",
+      "recommended_action": "Validate the executing user and host, preserve the supporting endpoint events, review the PowerShell command and process lineage, correlate the network destination, and escalate for containment consideration if the activity is unauthorized."
+    },
+    {
+      "alert_id": "ALERT-EVT-003007-DET-ENDPOINT-001",
+      "detection_id": "DET-ENDPOINT-001",
+      "detection_name": "Suspicious PowerShell Execution",
+      "detection_version": "1.0",
+      "status": "open",
+      "severity": "high",
+      "confidence": "high",
+      "evidence_classification": "observed_evidence",
+      "event_type": "process_creation",
+      "host": "lab-win-04",
+      "user": "david",
+      "process": "powershell.exe",
+      "process_id": 4638,
+      "parent_process": "winword.exe",
+      "command_line": "powershell.exe -NoProfile -WindowStyle Hidden -EncodedCommand SQBFAFgA",
+      "risk_score": 100,
+      "indicators": [
+        "encoded_command",
+        "suspicious_parent",
+        "hidden_window",
+        "correlated_network_activity",
+        "correlated_child_process"
+      ],
+      "correlation_window_minutes": 5,
+      "network_event_id": "EVT-003008",
+      "child_process_event_id": "EVT-003009",
+      "supporting_event_ids": [
+        "EVT-003007",
+        "EVT-003008",
+        "EVT-003009"
+      ],
+      "rationale": "Observed PowerShell execution with an encoded command and additional correlated execution indicators: encoded_command, suspicious_parent, hidden_window, correlated_network_activity, correlated_child_process. This is suspicious endpoint telemetry and does not independently establish malicious intent or compromise.",
+      "mitre_attack": {
+        "tactic": "execution",
+        "technique": "T1059",
+        "subtechnique": "T1059.001",
+        "name": "PowerShell"
+      },
+      "analyst_interpretation": "The observed process lineage and correlated endpoint activity are consistent with suspicious PowerShell execution. Analyst review should determine whether the execution was authorized and whether the decoded command, network destination, and child process were expected.",
+      "recommended_action": "Validate the executing user and host, preserve the supporting endpoint events, review the PowerShell command and process lineage, correlate the network destination, and escalate for containment consideration if the activity is unauthorized."
+    }
+  ]
+}

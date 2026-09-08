@@ -15,6 +15,10 @@ CASE002_TELEMETRY = (
     ROOT / "telemetry/authentication/CASE-002-authentication-events.jsonl"
 )
 
+CASE003_TELEMETRY = (
+    ROOT / "telemetry/endpoint/CASE-003-endpoint-events.jsonl"
+)
+
 
 def run_detection(detection_id, telemetry_path, output_path):
     result = subprocess.run(
@@ -257,3 +261,160 @@ def test_invalid_telemetry_is_rejected(tmp_path):
     )
 
     assert result.returncode != 0
+
+
+def test_endpoint_001_suspicious_powershell_detection(tmp_path):
+    output = tmp_path / "endpoint001.json"
+
+    document = run_detection(
+        "DET-ENDPOINT-001",
+        CASE003_TELEMETRY,
+        output,
+    )
+
+    assert document["detection_id"] == "DET-ENDPOINT-001"
+    assert document["alert_count"] == 2
+
+    alert_ids = {
+        alert["alert_id"]
+        for alert in document["alerts"]
+    }
+
+    assert alert_ids == {
+        "ALERT-EVT-003006-DET-ENDPOINT-001",
+        "ALERT-EVT-003007-DET-ENDPOINT-001",
+    }
+
+
+def test_endpoint_001_encoded_powershell_alert(tmp_path):
+    output = tmp_path / "endpoint001-encoded.json"
+
+    document = run_detection(
+        "DET-ENDPOINT-001",
+        CASE003_TELEMETRY,
+        output,
+    )
+
+    alert = next(
+        alert
+        for alert in document["alerts"]
+        if alert["alert_id"]
+        == "ALERT-EVT-003006-DET-ENDPOINT-001"
+    )
+
+    assert alert["host"] == "lab-win-04"
+    assert alert["user"] == "david"
+    assert alert["process"] == "powershell.exe"
+    assert alert["process_id"] == 4632
+    assert alert["parent_process"] == "winword.exe"
+    assert alert["severity"] == "high"
+    assert alert["confidence"] == "high"
+    assert alert["risk_score"] == 100
+    assert "encoded_command" in alert["indicators"]
+    assert "suspicious_parent" in alert["indicators"]
+
+
+def test_endpoint_001_correlates_network_and_child_process(tmp_path):
+    output = tmp_path / "endpoint001-correlation.json"
+
+    document = run_detection(
+        "DET-ENDPOINT-001",
+        CASE003_TELEMETRY,
+        output,
+    )
+
+    alert = next(
+        alert
+        for alert in document["alerts"]
+        if alert["alert_id"]
+        == "ALERT-EVT-003007-DET-ENDPOINT-001"
+    )
+
+    assert alert["process_id"] == 4638
+    assert alert["parent_process"] == "winword.exe"
+    assert alert["network_event_id"] == "EVT-003008"
+    assert alert["child_process_event_id"] == "EVT-003009"
+
+    assert "hidden_window" in alert["indicators"]
+    assert "correlated_network_activity" in alert["indicators"]
+    assert "correlated_child_process" in alert["indicators"]
+
+    assert set(alert["supporting_event_ids"]) == {
+        "EVT-003007",
+        "EVT-003008",
+        "EVT-003009",
+    }
+
+
+def test_endpoint_001_legitimate_powershell_does_not_trigger(tmp_path):
+    output = tmp_path / "endpoint001-negative.json"
+    negative_path = tmp_path / "endpoint001-negative.jsonl"
+
+    events = [
+        json.loads(line)
+        for line in CASE003_TELEMETRY.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+    legitimate = [
+        event
+        for event in events
+        if event["event_id"] in {
+            "EVT-003001",
+            "EVT-003002",
+            "EVT-003004",
+            "EVT-003005",
+            "EVT-003010",
+        }
+    ]
+
+    negative_path.write_text(
+        "\n".join(json.dumps(event) for event in legitimate) + "\n",
+        encoding="utf-8",
+    )
+
+    document = run_detection(
+        "DET-ENDPOINT-001",
+        negative_path,
+        output,
+    )
+
+    assert document["alert_count"] == 0
+    assert document["alerts"] == []
+
+
+def test_endpoint_001_supporting_events_exist_in_telemetry(tmp_path):
+    output = tmp_path / "endpoint001-evidence.json"
+
+    document = run_detection(
+        "DET-ENDPOINT-001",
+        CASE003_TELEMETRY,
+        output,
+    )
+
+    telemetry_events = [
+        json.loads(line)
+        for line in CASE003_TELEMETRY.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+    telemetry_ids = {
+        event["event_id"]
+        for event in telemetry_events
+    }
+
+    for alert in document["alerts"]:
+        assert alert["supporting_event_ids"]
+        assert set(alert["supporting_event_ids"]).issubset(
+            telemetry_ids
+        )
+
+    correlated_alert = next(
+        alert
+        for alert in document["alerts"]
+        if alert["alert_id"]
+        == "ALERT-EVT-003007-DET-ENDPOINT-001"
+    )
+
+    assert correlated_alert["network_event_id"] in telemetry_ids
+    assert correlated_alert["child_process_event_id"] in telemetry_ids
