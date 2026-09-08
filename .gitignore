@@ -1,4 +1,9 @@
-# Python
+# ============================================================
+# CYBERNOVA SOC Operations Lab
+# Git Ignore Policy
+# ============================================================
+
+# Python bytecode
 __pycache__/
 *.py[cod]
 *$py.class
@@ -7,7 +12,6 @@ __pycache__/
 venv/
 .venv/
 env/
-.env/
 ENV/
 
 # Environment variables and secrets
@@ -33,11 +37,11 @@ build/
 dist/
 *.egg-info/
 
-# IDEs
+# IDE configuration
 .vscode/
 .idea/
 
-# OS files
+# Operating system files
 .DS_Store
 Thumbs.db
 
@@ -46,11 +50,12 @@ Thumbs.db
 *.temp
 *.swp
 *.swo
-
-# Logs generated during local development
-*.log
+*~
 
 # Local databases
 *.db
 *.sqlite
 *.sqlite3
+
+# Local logs
+*.log
