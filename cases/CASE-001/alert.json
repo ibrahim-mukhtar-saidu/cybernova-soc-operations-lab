@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0",
+  "generated_by": "CYBERNOVA SOC Detection Engine",
+  "detection_id": "DET-AUTH-001",
+  "alert_count": 1,
+  "alerts": [
+    {
+      "alert_id": "ALERT-CASE-001-DET-AUTH-001",
+      "detection_id": "DET-AUTH-001",
+      "detection_name": "SSH Brute-Force Authentication Detection",
+      "detection_version": "1.0",
+      "status": "open",
+      "severity": "high",
+      "confidence": "high",
+      "evidence_classification": "observed_evidence",
+      "event_type": "authentication",
+      "protocol": "ssh",
+      "host": "lab-auth-01",
+      "source_ip": "198.51.100.25",
+      "user": "root",
+      "failed_attempt_count": 8,
+      "threshold": {
+        "failed_attempts": 5,
+        "window_minutes": 5
+      },
+      "first_seen": "2026-09-08T09:14:03Z",
+      "last_seen": "2026-09-08T09:15:01Z",
+      "successful_authentication_observed": true,
+      "successful_authentication_event_id": "EVT-001012",
+      "supporting_event_ids": [
+        "EVT-001004",
+        "EVT-001005",
+        "EVT-001006",
+        "EVT-001007",
+        "EVT-001008",
+        "EVT-001009",
+        "EVT-001010",
+        "EVT-001011",
+        "EVT-001012"
+      ],
+      "rationale": "Observed 8 failed SSH authentication attempts for user 'root' from 198.51.100.25 within 5 minutes, followed by a successful SSH authentication. The successful authentication is an observed event and does not independently prove account compromise.",
+      "mitre_attack": {
+        "tactic": "credential-access",
+        "technique": "T1110",
+        "subtechnique": "T1110.001"
+      },
+      "analyst_interpretation": "The telemetry is consistent with an SSH brute-force authentication pattern. If the subsequent successful authentication is unexpected, additional identity, endpoint, and network evidence should be collected before determining whether the account was compromised.",
+      "recommended_action": "Validate whether the source and account activity were authorized. Preserve supporting authentication telemetry, review endpoint and identity evidence, and investigate the successful authentication if it was not expected."
+    }
+  ]
+}
