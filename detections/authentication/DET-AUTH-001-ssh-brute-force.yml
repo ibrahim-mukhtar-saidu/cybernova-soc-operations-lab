@@ -1,0 +1,100 @@
+id: DET-AUTH-001
+name: SSH Brute-Force Authentication Detection
+version: 1.0
+status: experimental
+
+description: >
+  Detects repeated failed SSH authentication attempts from the same source
+  IP against the same account within a defined time window. A subsequent
+  successful authentication increases investigation priority but does not,
+  by itself, confirm account compromise.
+
+data_source:
+  event_type: authentication
+  source: linux-auth
+  protocol: ssh
+
+logic:
+  condition: >
+    Count failed SSH authentication events grouped by source_ip and user
+    reaches or exceeds the configured threshold within the configured window.
+
+  filters:
+    status: failure
+    action: login_failure
+    protocol: ssh
+    port: 22
+
+  threshold:
+    failed_attempts: 5
+    window_minutes: 5
+    group_by:
+      - source_ip
+      - user
+
+  escalation:
+    condition: >
+      A successful SSH authentication for the same source_ip and user occurs
+      after the threshold is reached within the investigation window.
+    priority: high
+
+severity:
+  base: medium
+  escalation: high
+
+alert:
+  type: authentication_brute_force
+  title: Repeated SSH authentication failures detected
+  required_fields:
+    - source_ip
+    - user
+    - host
+    - failed_attempt_count
+    - first_seen
+    - last_seen
+    - detection_id
+
+mitre_attack:
+  tactics:
+    - credential-access
+  techniques:
+    - T1110
+  subtechniques:
+    - T1110.001
+
+false_positives:
+  - Authorized security testing
+  - Misconfigured automation
+  - Repeated administrative login failures
+  - Forgotten or incorrect credentials
+  - Scheduled systems using outdated credentials
+
+analyst_actions:
+  - Validate the source IP and destination host.
+  - Review the affected account.
+  - Determine the number and timing of failed attempts.
+  - Check whether authentication succeeded after the failures.
+  - Review related endpoint and network telemetry.
+  - Assess whether the activity is authorized.
+  - Preserve relevant evidence.
+  - Escalate according to confirmed impact and confidence.
+
+limitations:
+  - Authentication telemetry alone cannot prove account compromise.
+  - Source IP attribution may not identify the actual operator.
+  - Successful authentication may be legitimate.
+  - Additional endpoint, identity, and network evidence may be required.
+
+testing:
+  positive_case:
+    file: telemetry/authentication/CASE-001-authentication-events.jsonl
+    expected: true
+
+  negative_case:
+    requirement: >
+      Fewer than five failed SSH authentication attempts from the same
+      source_ip and user within five minutes should not trigger the rule.
+
+evidence_standard:
+  source: docs/evidence-integrity.md
+  laboratory_data: synthetic_or_authorized_only
