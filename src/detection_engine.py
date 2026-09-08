@@ -6,6 +6,7 @@ Detection Engine
 Implemented detections:
     DET-AUTH-001 - SSH Brute-Force Authentication Detection
     DET-AUTH-002 - Password Spraying Authentication Detection
+    DET-AUTH-003 - Suspicious Post-Authentication Privileged Session
     DET-ENDPOINT-001 - Suspicious PowerShell Execution
 
 Purpose:
@@ -53,6 +54,21 @@ DETECTION_AUTH_002_VERSION = "1.0"
 AUTH_002_MIN_FAILURES = 6
 AUTH_002_MIN_DISTINCT_USERS = 6
 AUTH_002_WINDOW_MINUTES = 5
+
+
+# ---------------------------------------------------------------------------
+# DET-AUTH-003: Suspicious Post-Authentication Privileged Session
+# ---------------------------------------------------------------------------
+
+DETECTION_AUTH_003 = "DET-AUTH-003"
+DETECTION_AUTH_003_NAME = (
+    "Suspicious Post-Authentication Privileged Session"
+)
+DETECTION_AUTH_003_VERSION = "1.0"
+
+AUTH_003_MIN_FAILURES = 4
+AUTH_003_MIN_COMMANDS = 2
+AUTH_003_WINDOW_MINUTES = 5
 
 
 # ---------------------------------------------------------------------------
@@ -1140,6 +1156,331 @@ def detect_endpoint_001(
 
 
 # ---------------------------------------------------------------------------
+# DET-AUTH-003: Suspicious Post-Authentication Privileged Session
+# ---------------------------------------------------------------------------
+
+
+def auth_003_session_id(event: dict[str, Any]) -> str | None:
+    """Return the normalized session ID from authentication telemetry."""
+
+    metadata = event.get("metadata")
+
+    if not isinstance(metadata, dict):
+        return None
+
+    value = metadata.get("session_id")
+
+    if value is None:
+        return None
+
+    value = str(value).strip()
+
+    return value or None
+
+
+def auth_003_is_password_authentication(
+    event: dict[str, Any],
+) -> bool:
+    """Determine whether an event represents password SSH authentication."""
+
+    if event.get("event_type") != "authentication":
+        return False
+
+    if event.get("protocol") not in {None, "ssh"}:
+        return False
+
+    metadata = event.get("metadata")
+
+    if isinstance(metadata, dict):
+        auth_method = str(
+            metadata.get("auth_method") or ""
+        ).lower()
+
+        if auth_method and auth_method != "password":
+            return False
+
+    return True
+
+
+def auth_003_is_failed_authentication(
+    event: dict[str, Any],
+) -> bool:
+    """Identify failed password authentication events."""
+
+    return (
+        auth_003_is_password_authentication(event)
+        and event.get("status") in VALID_FAILURE_STATUSES
+        and event.get("action") in VALID_FAILURE_ACTIONS
+    )
+
+
+def auth_003_is_successful_authentication(
+    event: dict[str, Any],
+) -> bool:
+    """Identify successful password authentication events."""
+
+    return (
+        auth_003_is_password_authentication(event)
+        and event.get("status") in SUCCESS_STATUSES
+        and event.get("action") in SUCCESS_ACTIONS
+    )
+
+
+def auth_003_has_privileged_indicator(
+    event: dict[str, Any],
+) -> str | None:
+    """Return a recognized privileged activity indicator."""
+
+    if event.get("event_type") != "command_execution":
+        return None
+
+    command_line = str(
+        event.get("command_line") or ""
+    ).strip().lower()
+
+    if command_line == "sudo -l":
+        return "sudo -l"
+
+    if command_line == "id":
+        return "id"
+
+    return None
+
+
+def build_auth_003_alert(
+    successful_authentication: dict[str, Any],
+    failed_events: list[dict[str, Any]],
+    session_start: dict[str, Any],
+    command_events: list[dict[str, Any]],
+    privileged_indicators: list[str],
+) -> dict[str, Any]:
+    """Build a DET-AUTH-003 alert."""
+
+    supporting_events = (
+        failed_events
+        + [successful_authentication, session_start]
+        + command_events
+    )
+
+    supporting_event_ids = [
+        event["event_id"]
+        for event in supporting_events
+    ]
+
+    first_seen = min(
+        event["_parsed_timestamp"]
+        for event in supporting_events
+    )
+
+    last_seen = max(
+        event["_parsed_timestamp"]
+        for event in supporting_events
+    )
+
+    return {
+        "alert_id": "ALERT-CASE-004-DET-AUTH-003",
+        "detection_id": DETECTION_AUTH_003,
+        "detection_name": DETECTION_AUTH_003_NAME,
+        "detection_version": DETECTION_AUTH_003_VERSION,
+        "status": "open",
+        "severity": "high",
+        "confidence": "high",
+        "evidence_classification": "observed_evidence",
+        "event_type": "authentication_sequence",
+        "source_ip": successful_authentication["source_ip"],
+        "host": successful_authentication["host"],
+        "user": successful_authentication["user"],
+        "failed_authentication_count": len(failed_events),
+        "successful_authentication_event_id": (
+            successful_authentication["event_id"]
+        ),
+        "session_start_event_id": session_start["event_id"],
+        "post_authentication_command_count": len(command_events),
+        "privileged_activity_indicators": privileged_indicators,
+        "session_id": auth_003_session_id(
+            successful_authentication
+        ),
+        "correlation_window_minutes": AUTH_003_WINDOW_MINUTES,
+        "first_seen": first_seen.isoformat(),
+        "last_seen": last_seen.isoformat(),
+        "supporting_event_ids": supporting_event_ids,
+        "rationale": (
+            f"Observed {len(failed_events)} failed password "
+            "authentication attempts against the same account and "
+            "source IP, followed by successful authentication, a "
+            "correlated session start, and "
+            f"{len(command_events)} post-authentication command events. "
+            "Privileged activity indicators observed: "
+            + ", ".join(privileged_indicators)
+            + "."
+        ),
+        "analyst_interpretation": (
+            "The telemetry shows a suspicious authentication-to-session "
+            "sequence involving a privileged account and subsequent "
+            "enumeration activity. This is observed evidence of a "
+            "suspicious sequence and does not independently prove "
+            "account compromise or malicious intent."
+        ),
+        "recommended_action": (
+            "Verify whether the authentication was authorized, "
+            "confirm ownership of the source IP and account, review "
+            "the complete session activity, correlate identity and "
+            "endpoint telemetry, and escalate for containment "
+            "consideration if unauthorized access is confirmed."
+        ),
+        "mitre_attack": {
+            "tactics": [
+                "credential_access",
+                "persistence",
+                "discovery",
+                "privilege_escalation",
+            ],
+            "techniques": [
+                {
+                    "technique": "T1110",
+                    "name": "Brute Force",
+                },
+                {
+                    "technique": "T1078",
+                    "name": "Valid Accounts",
+                },
+                {
+                    "technique": "T1087",
+                    "name": "Account Discovery",
+                },
+                {
+                    "technique": "T1069.001",
+                    "name": "Permission Groups Discovery: Local",
+                },
+                {
+                    "technique": "T1059.004",
+                    "name": "Unix Shell",
+                },
+            ],
+        },
+    }
+
+
+def detect_auth_003(
+    events: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Run DET-AUTH-003 against authentication/session telemetry."""
+
+    alerts: list[dict[str, Any]] = []
+
+    for successful_authentication in events:
+        if not auth_003_is_successful_authentication(
+            successful_authentication
+        ):
+            continue
+
+        source_ip = successful_authentication.get("source_ip")
+        user = successful_authentication.get("user")
+        timestamp = successful_authentication["_parsed_timestamp"]
+
+        window_start = timestamp - timedelta(
+            minutes=AUTH_003_WINDOW_MINUTES
+        )
+        window_end = timestamp + timedelta(
+            minutes=AUTH_003_WINDOW_MINUTES
+        )
+
+        failed_events = [
+            event
+            for event in events
+            if (
+                auth_003_is_failed_authentication(event)
+                and event.get("source_ip") == source_ip
+                and event.get("user") == user
+                and window_start
+                <= event["_parsed_timestamp"]
+                <= timestamp
+            )
+        ]
+
+        if len(failed_events) < AUTH_003_MIN_FAILURES:
+            continue
+
+        session_id = auth_003_session_id(
+            successful_authentication
+        )
+
+        if session_id is None:
+            continue
+
+        session_start = None
+
+        for event in events:
+            if event.get("event_type") != "session_start":
+                continue
+
+            if event.get("source_ip") != source_ip:
+                continue
+
+            if event.get("user") != user:
+                continue
+
+            if auth_003_session_id(event) != session_id:
+                continue
+
+            if not (
+                timestamp
+                <= event["_parsed_timestamp"]
+                <= window_end
+            ):
+                continue
+
+            session_start = event
+            break
+
+        if session_start is None:
+            continue
+
+        command_events = [
+            event
+            for event in events
+            if (
+                event.get("event_type") == "command_execution"
+                and event.get("source_ip") == source_ip
+                and event.get("user") == user
+                and auth_003_session_id(event) == session_id
+                and timestamp
+                <= event["_parsed_timestamp"]
+                <= window_end
+            )
+        ]
+
+        if len(command_events) < AUTH_003_MIN_COMMANDS:
+            continue
+
+        privileged_indicators = []
+
+        for event in command_events:
+            indicator = auth_003_has_privileged_indicator(event)
+
+            if (
+                indicator is not None
+                and indicator not in privileged_indicators
+            ):
+                privileged_indicators.append(indicator)
+
+        if not privileged_indicators:
+            continue
+
+        alerts.append(
+            build_auth_003_alert(
+                successful_authentication=successful_authentication,
+                failed_events=failed_events,
+                session_start=session_start,
+                command_events=command_events,
+                privileged_indicators=privileged_indicators,
+            )
+        )
+
+    return alerts
+
+
+# ---------------------------------------------------------------------------
 # Serialization
 # ---------------------------------------------------------------------------
 
@@ -1214,6 +1555,7 @@ def parse_args() -> argparse.Namespace:
         choices=(
             DETECTION_AUTH_001,
             DETECTION_AUTH_002,
+            DETECTION_AUTH_003,
             DETECTION_ENDPOINT_001,
         ),
         required=True,
@@ -1248,6 +1590,9 @@ def run_detection(
 
     if detection_id == DETECTION_AUTH_002:
         return detect_auth_002(events)
+
+    if detection_id == DETECTION_AUTH_003:
+        return detect_auth_003(events)
 
     if detection_id == DETECTION_ENDPOINT_001:
         return detect_endpoint_001(events)

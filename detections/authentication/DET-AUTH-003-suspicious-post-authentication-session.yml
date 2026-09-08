@@ -1,0 +1,133 @@
+detection_id: DET-AUTH-003
+name: Suspicious Post-Authentication Privileged Session
+version: 1.0
+status: experimental
+description: >
+  Detects a suspicious authentication sequence in which multiple failed
+  password authentication attempts against the same account are followed
+  by a successful authentication and subsequent privileged session activity.
+
+data_source:
+  category: authentication
+  platform: linux
+  protocol: ssh
+
+required_fields:
+  - event_id
+  - timestamp
+  - event_type
+  - source
+  - host
+  - user
+  - source_ip
+  - destination_ip
+  - action
+  - status
+  - process
+  - command_line
+  - metadata
+
+logic:
+  authentication_filter:
+    event_type: authentication
+    protocol: ssh
+    auth_method: password
+
+  failed_authentication:
+    status: failure
+    action: login_failure
+
+  successful_authentication:
+    status: success
+    action: login_success
+
+  sequence:
+    minimum_failed_attempts: 4
+    correlation_window_minutes: 5
+    same_source_ip: true
+    same_user: true
+    success_required: true
+
+  post_authentication:
+    session_start_required: true
+    command_execution_required: true
+    minimum_command_events: 2
+
+  privileged_activity:
+    indicators:
+      - "sudo -l"
+      - "id"
+    minimum_indicators: 1
+
+severity:
+  base: medium
+  escalated: high
+
+confidence:
+  base: medium
+  escalated: high
+
+escalation:
+  conditions:
+    - successful_authentication_after_failures
+    - correlated_session_start
+    - minimum_two_post_authentication_commands
+    - privileged_activity_indicator
+
+mitre_attack:
+  tactics:
+    - credential_access
+    - persistence
+    - discovery
+    - privilege_escalation
+  techniques:
+    - T1110
+    - T1078
+    - T1087
+    - T1069.001
+    - T1059.004
+
+false_positives:
+  - legitimate administrator authentication after mistyped passwords
+  - authorized administrative troubleshooting
+  - scripted administrative sessions
+
+false_negatives:
+  - successful authentication without preceding failures
+  - activity outside the correlation window
+  - incomplete session telemetry
+  - command execution not captured by telemetry
+
+validation:
+  positive_dataset:
+    - CASE-004
+  positive_events:
+    - EVT-004003
+    - EVT-004004
+    - EVT-004005
+    - EVT-004006
+    - EVT-004007
+    - EVT-004008
+    - EVT-004009
+    - EVT-004010
+    - EVT-004011
+    - EVT-004012
+
+  negative_dataset:
+    - EVT-004001
+    - EVT-004002
+    - EVT-004013
+    - EVT-004014
+    - EVT-004015
+
+evidence_classification:
+  detection_basis: observed_evidence
+  analyst_interpretation: analyst_interpretation
+
+analyst_guidance:
+  - Verify whether the successful authentication was expected.
+  - Confirm the source IP and account ownership.
+  - Review the correlated session activity.
+  - Determine whether privileged enumeration was authorized.
+  - Correlate with endpoint, network, and identity telemetry.
+  - Escalate to incident response if unauthorized access is confirmed.
