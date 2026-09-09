@@ -1,0 +1,152 @@
+detection_id: DET-WEB-001
+name: Suspicious SQL Injection Activity
+version: "1.0"
+status: experimental
+description: >
+  Detects repeated web requests containing multiple SQL injection
+  indicators from the same source against a web application within
+  a short correlation window.
+
+data_source:
+  - web_request
+  - web_application_log
+  - http_request_correlation
+
+required_fields:
+  - event_id
+  - timestamp
+  - event_type
+  - source
+  - source_ip
+  - host
+  - user
+  - action
+  - status
+  - method
+  - url
+  - path
+  - query
+  - http_status
+  - metadata
+
+web_filter:
+  event_type: web_request
+  source: web_server
+  status: success
+
+correlation:
+  group_by:
+    - source_ip
+    - host
+
+  minimum_suspicious_requests: 4
+  maximum_window_minutes: 5
+
+  sql_injection:
+    enabled: true
+    minimum_indicators: 2
+
+suspicious_indicators:
+  sql_boolean_or:
+    enabled: true
+    patterns:
+      - "' or "
+      - '" or '
+
+  sql_union_select:
+    enabled: true
+    patterns:
+      - "union select"
+
+  sql_boolean_test:
+    enabled: true
+    patterns:
+      - " and 1=1"
+      - " and 1=2"
+
+  sql_comment_marker:
+    enabled: true
+    patterns:
+      - "--"
+      - "#"
+
+  sqlmap_user_agent:
+    enabled: true
+    user_agent_pattern: sqlmap
+
+scoring:
+  base_score: 20
+
+  indicators:
+    suspicious_request_count: 20
+    multiple_sql_injection_indicators: 25
+    sqlmap_user_agent: 20
+    sql_union_select: 15
+    sql_boolean_test: 10
+    server_error_response: 10
+
+  thresholds:
+    low: 0
+    medium: 40
+    high: 70
+    critical: 90
+
+severity:
+  default: medium
+  escalated: high
+
+confidence:
+  default: medium
+  escalated: high
+
+escalation:
+  conditions:
+    - suspicious_request_count
+    - multiple_sql_injection_indicators
+    - sqlmap_user_agent
+    - sql_union_select
+    - server_error_response
+
+mitre_attack:
+  tactics:
+    - initial_access
+  techniques:
+    - id: T1190
+      name: Exploit Public-Facing Application
+
+case_reference:
+  positive:
+    - EVT-006003
+    - EVT-006004
+    - EVT-006005
+    - EVT-006006
+    - EVT-006007
+    - EVT-006008
+
+  negative:
+    - EVT-006001
+    - EVT-006002
+    - EVT-006009
+    - EVT-006010
+
+evidence_classification:
+  observed_evidence:
+    - repeated web requests containing SQL injection indicators
+    - multiple distinct SQL injection patterns
+    - automated SQL injection tooling identified by user-agent
+    - requests targeting web application endpoints
+    - server error responses associated with suspicious requests
+
+  analyst_interpretation:
+    - activity is consistent with SQL injection probing
+    - multiple SQL injection techniques increase confidence in malicious intent
+    - observed requests do not by themselves prove successful exploitation
+    - application compromise requires independent validation
+
+analyst_guidance:
+  - Review web server and application logs for corresponding errors.
+  - Validate whether suspicious requests resulted in unauthorized data access.
+  - Review the source IP across other web applications and hosts.
+  - Inspect application-layer controls and parameterized query usage.
+  - Review database logs for corresponding SQL execution.
+  - Do not classify the application as compromised solely from this detection.

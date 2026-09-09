@@ -99,6 +99,19 @@ NET_001_MIN_REGULARITY_RATIO = 0.75
 
 
 # ---------------------------------------------------------------------------
+# DET-WEB-001: SQL Injection
+# ---------------------------------------------------------------------------
+
+DETECTION_WEB_001 = "DET-WEB-001"
+DETECTION_WEB_001_NAME = "Suspicious SQL Injection Activity"
+DETECTION_WEB_001_VERSION = "1.0"
+
+WEB_001_MIN_SUSPICIOUS_REQUESTS = 4
+WEB_001_WINDOW_MINUTES = 5
+WEB_001_MIN_INDICATORS = 2
+
+
+# ---------------------------------------------------------------------------
 # Telemetry schemas
 # ---------------------------------------------------------------------------
 
@@ -137,6 +150,24 @@ NETWORK_REQUIRED_FIELDS = {
     "direction",
     "action",
     "status",
+}
+
+WEB_REQUIRED_FIELDS = {
+    "event_id",
+    "timestamp",
+    "event_type",
+    "source",
+    "source_ip",
+    "host",
+    "user",
+    "action",
+    "status",
+    "method",
+    "url",
+    "path",
+    "query",
+    "http_status",
+    "metadata",
 }
 
 VALID_FAILURE_STATUSES = {"failure"}
@@ -192,6 +223,57 @@ def parse_timestamp(value: str) -> datetime:
         )
 
     return timestamp.astimezone(timezone.utc)
+
+
+def web_request_events(events):
+    return [
+        event
+        for event in events
+        if event["event_type"] == "web_request"
+        and event["source"] == "web_server"
+        and event["status"] == "success"
+    ]
+
+
+def web_request_text(event):
+    from urllib.parse import unquote
+
+    parts = [
+        str(event.get("url") or ""),
+        str(event.get("path") or ""),
+        str(event.get("query") or ""),
+    ]
+    return unquote(" ".join(parts)).lower()
+
+
+def web_request_user_agent(event):
+    metadata = event.get("metadata")
+    if not isinstance(metadata, dict):
+        return ""
+    return str(metadata.get("user_agent") or "").lower()
+
+
+def sql_injection_indicators(event):
+    text = web_request_text(event)
+    user_agent = web_request_user_agent(event)
+    indicators = []
+
+    if "' or " in text or '" or ' in text:
+        indicators.append("sql_boolean_or")
+
+    if "union select" in text:
+        indicators.append("sql_union_select")
+
+    if " and 1=1" in text or " and 1=2" in text:
+        indicators.append("sql_boolean_test")
+
+    if "--" in text or "#" in text:
+        indicators.append("sql_comment_marker")
+
+    if "sqlmap" in user_agent:
+        indicators.append("sqlmap_user_agent")
+
+    return indicators
 
 
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -400,6 +482,42 @@ def validate_event_fields(
                 raise TelemetryValidationError(
                     f"line {line_number}: network source missing {field}"
                 )
+
+        return
+
+    if event_type == "web_request":
+        missing = WEB_REQUIRED_FIELDS - set(event)
+
+        if missing:
+            missing_fields = ", ".join(sorted(missing))
+            raise TelemetryValidationError(
+                f"line {line_number}: missing web request fields: "
+                f"{missing_fields}"
+            )
+
+        for field in (
+            "source_ip",
+            "host",
+            "user",
+            "method",
+            "url",
+            "path",
+            "query",
+        ):
+            if not isinstance(event[field], str):
+                raise TelemetryValidationError(
+                    f"line {line_number}: {field} must be a string"
+                )
+
+        if not isinstance(event["http_status"], int):
+            raise TelemetryValidationError(
+                f"line {line_number}: http_status must be an integer"
+            )
+
+        if not isinstance(event["metadata"], dict):
+            raise TelemetryValidationError(
+                f"line {line_number}: metadata must be an object"
+            )
 
         return
 
@@ -2288,6 +2406,164 @@ def detect_net_001(
 
 
 
+def build_web_001_alert(
+    window_events: list[dict[str, Any]],
+    indicators: list[str],
+    risk_score: int,
+) -> dict[str, Any]:
+    """Build a DET-WEB-001 SQL injection alert."""
+
+    first_event = window_events[0]
+    last_event = window_events[-1]
+
+    return {
+        "alert_id": "ALERT-CASE-006-DET-WEB-001",
+        "detection_id": DETECTION_WEB_001,
+        "detection_name": DETECTION_WEB_001_NAME,
+        "detection_version": DETECTION_WEB_001_VERSION,
+        "severity": "high",
+        "confidence": "high",
+        "timestamp": last_event["timestamp"],
+        "source_ip": first_event["source_ip"],
+        "host": first_event["host"],
+        "user": first_event["user"],
+        "suspicious_request_count": len(window_events),
+        "targeted_paths": sorted(
+            {
+                event["path"]
+                for event in window_events
+            }
+        ),
+        "indicators": sorted(set(indicators)),
+        "supporting_event_ids": [
+            event["event_id"]
+            for event in window_events
+        ],
+        "first_seen": first_event["timestamp"],
+        "last_seen": last_event["timestamp"],
+        "risk_score": risk_score,
+        "evidence_classification": {
+            "observed_evidence": [
+                "repeated web requests containing SQL injection indicators",
+                "multiple distinct SQL injection patterns",
+                "automated SQL injection tooling identified by user-agent",
+            ],
+            "analyst_interpretation": [
+                "activity is consistent with SQL injection probing",
+                "observed requests do not by themselves prove successful exploitation",
+            ],
+        },
+        "analyst_guidance": [
+            "Review web server and application logs for corresponding errors.",
+            "Validate whether any suspicious requests resulted in unauthorized data access.",
+            "Review the source IP across other web applications and hosts.",
+            "Inspect application-layer controls and parameterized query usage.",
+            "Do not classify the application as compromised solely from this detection.",
+        ],
+    }
+
+
+def detect_web_001(
+    events: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Detect suspicious SQL injection activity."""
+
+    alerts: list[dict[str, Any]] = []
+
+    requests = web_request_events(events)
+
+    grouped: defaultdict[
+        tuple[str, str],
+        list[dict[str, Any]],
+    ] = defaultdict(list)
+
+    for event in requests:
+        grouped[
+            (
+                event["source_ip"],
+                event["host"],
+            )
+        ].append(event)
+
+    for group in grouped.values():
+        ordered = sorted(
+            group,
+            key=lambda event: event["_parsed_timestamp"],
+        )
+
+        for index, event in enumerate(ordered):
+            window_start = event["_parsed_timestamp"]
+            window_end = window_start + timedelta(
+                minutes=WEB_001_WINDOW_MINUTES
+            )
+
+            window_events = [
+                candidate
+                for candidate in ordered[index:]
+                if candidate["_parsed_timestamp"] <= window_end
+            ]
+
+            suspicious_events = [
+                candidate
+                for candidate in window_events
+                if sql_injection_indicators(candidate)
+            ]
+
+            if len(suspicious_events) < WEB_001_MIN_SUSPICIOUS_REQUESTS:
+                continue
+
+            all_indicators = [
+                indicator
+                for candidate in suspicious_events
+                for indicator in sql_injection_indicators(candidate)
+            ]
+
+            distinct_indicators = set(all_indicators)
+
+            if len(distinct_indicators) < WEB_001_MIN_INDICATORS:
+                continue
+
+            risk_score = 20
+
+            if len(suspicious_events) >= WEB_001_MIN_SUSPICIOUS_REQUESTS:
+                risk_score += 20
+
+            if len(distinct_indicators) >= WEB_001_MIN_INDICATORS:
+                risk_score += 25
+
+            if "sqlmap_user_agent" in distinct_indicators:
+                risk_score += 20
+
+            if "sql_union_select" in distinct_indicators:
+                risk_score += 15
+
+            if "sql_boolean_test" in distinct_indicators:
+                risk_score += 10
+
+            if any(
+                candidate["http_status"] >= 500
+                for candidate in suspicious_events
+            ):
+                risk_score += 10
+
+            risk_score = min(risk_score, 100)
+
+            if risk_score < 70:
+                continue
+
+            alerts.append(
+                build_web_001_alert(
+                    suspicious_events,
+                    all_indicators,
+                    risk_score,
+                )
+            )
+
+            break
+
+    return alerts
+
+
 # ---------------------------------------------------------------------------
 # Serialization
 # ---------------------------------------------------------------------------
@@ -2372,6 +2648,9 @@ def run_detection(
     if detection_id == DETECTION_NET_001:
         return detect_net_001(events)
 
+    if detection_id == DETECTION_WEB_001:
+        return detect_web_001(events)
+
     raise ValueError(
         f"unsupported detection: {detection_id}"
     )
@@ -2399,6 +2678,7 @@ def parse_args() -> argparse.Namespace:
             DETECTION_AUTH_003,
             DETECTION_ENDPOINT_001,
             DETECTION_NET_001,
+            DETECTION_WEB_001,
         ),
         help="Detection rule to execute.",
     )
@@ -2494,6 +2774,30 @@ def main() -> int:
             print(
                 "Average interval: "
                 f"{alert['average_interval_seconds']} seconds"
+            )
+            print(
+                "Risk score: "
+                f"{alert['risk_score']}"
+            )
+
+        elif args.detection == DETECTION_WEB_001:
+            print(
+                f"Source IP: {alert['source_ip']}"
+            )
+            print(
+                f"Host: {alert['host']}"
+            )
+            print(
+                "Suspicious requests: "
+                f"{alert['suspicious_request_count']}"
+            )
+            print(
+                "Targeted paths: "
+                f"{', '.join(alert['targeted_paths'])}"
+            )
+            print(
+                "Indicators: "
+                f"{', '.join(alert['indicators'])}"
             )
             print(
                 "Risk score: "
