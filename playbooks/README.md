@@ -20,9 +20,9 @@ They are intended to demonstrate practical SOC analyst workflow and detection-re
 | PB-002 | Password Spraying           | DET-AUTH-002      | Implemented |
 | PB-003 | Suspicious PowerShell       | DET-ENDPOINT-001  | Implemented |
 | PB-004 | Malware Execution           | DET-MALWARE-001   | Implemented |
-| PB-005 | Suspicious Network Activity | DET-NET-001       | Planned     |
+| PB-005 | Suspicious Network Activity | DET-NET-001       | Implemented |
 | PB-006 | Account Compromise          | DET-AUTH-003      | Implemented |
-| PB-007 | Linux Security Event        | DET-LINUX-001     | Planned     |
+| PB-007 | Linux Security Event        | DET-LINUX-001     | Implemented |
 | PB-008 | Web Attack                  | DET-WEB-001       | Planned     |
 | PB-009 | File Integrity Violation    | DET-HOST-001      | Planned     |
 | PB-010 | Multi-Stage Attack          | DET-CORR-001      | Planned     |
