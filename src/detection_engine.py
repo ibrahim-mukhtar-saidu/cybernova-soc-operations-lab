@@ -2354,6 +2354,13 @@ def detect_net_001(
                 ):
                     continue
 
+                if not (
+                    start_event["_parsed_timestamp"]
+                    <= candidate["_parsed_timestamp"]
+                    <= window_end
+                ):
+                    continue
+
                 if network_group_key(candidate) != key:
                     continue
 
