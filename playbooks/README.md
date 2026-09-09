@@ -21,7 +21,7 @@ They are intended to demonstrate practical SOC analyst workflow and detection-re
 | PB-003 | Suspicious PowerShell       | DET-ENDPOINT-001  | Implemented |
 | PB-004 | Malware Execution           | DET-MALWARE-001   | Implemented |
 | PB-005 | Suspicious Network Activity | DET-NET-001       | Planned     |
-| PB-006 | Account Compromise          | DET-AUTH-003      | Planned     |
+| PB-006 | Account Compromise          | DET-AUTH-003      | Implemented |
 | PB-007 | Linux Security Event        | DET-LINUX-001     | Planned     |
 | PB-008 | Web Attack                  | DET-WEB-001       | Planned     |
 | PB-009 | File Integrity Violation    | DET-HOST-001      | Planned     |
@@ -291,19 +291,121 @@ Planned focus:
 
 ### PB-006 — Account Compromise
 
-Primary detection:
+**File**
+
+`playbooks/PB-006-account-compromise.md`
+
+**Status**
+
+Implemented
+
+**Primary detection**
 
 `DET-AUTH-003`
 
-Planned focus:
+**Related flagship case**
+
+`CASE-004`
+
+**Purpose**
+
+Provides a structured SOC investigation and response workflow for suspicious account activity involving authentication anomalies, successful authentication, session establishment, and post-authentication privileged activity.
+
+**Implemented coverage**
 
 * Authentication sequence analysis
-* Privileged-session investigation
-* Account activity
+* Failed and successful authentication validation
+* Account authorization verification
+* Source-IP analysis
 * Session correlation
-* Post-authentication commands
-* Credential abuse hypotheses
-* Detection and response feedback
+* Session-ID validation
+* Post-authentication command analysis
+* Privileged activity investigation
+* Evidence classification
+* Evidence preservation
+* Timeline reconstruction
+* Indicator extraction and validation
+* Threat-intelligence boundaries
+* MITRE ATT&CK mapping
+* False-positive analysis
+* Authentication correlation
+* Endpoint correlation
+* Network correlation
+* Persistence correlation
+* Threat hunting
+* Containment
+* Credential response
+* Session response
+* Eradication
+* Recovery
+* Post-recovery monitoring
+* Detection validation
+* Detection-engineering feedback
+* Adversarial/evasion review
+* Escalation criteria
+* Closure criteria
+* Evidence-package requirements
+* Laboratory validation
+* Portfolio evidence standards
+
+**CASE-004 laboratory evidence**
+
+The related case contains:
+
+* 4 failed authentication attempts
+* Successful authentication
+* Correlated session establishment
+* 4 post-authentication command events
+* `id`
+* `sudo -l`
+* Source IP `198.51.100.60`
+* Host `lab-linux-01`
+* User `admin`
+* Session `SES-004-C`
+
+The case represents synthetic laboratory telemetry.
+
+The observed sequence is suspicious but does not independently prove account compromise or malicious intent.
+
+**MITRE ATT&CK context**
+
+* T1110 — Brute Force
+* T1078 — Valid Accounts
+* T1087 — Account Discovery
+* T1069.001 — Permission Groups Discovery: Local
+* T1059.004 — Unix Shell
+
+ATT&CK mappings are treated as contextual evidence mappings and require analyst validation against supporting telemetry.
+
+**Response coverage**
+
+* Authorization verification
+* Evidence preservation
+* Containment assessment
+* Credential rotation
+* Session termination
+* Account restriction
+* Host isolation assessment
+* Eradication
+* Recovery
+* Post-recovery monitoring
+* Escalation
+* Closure
+
+**Detection feedback**
+
+The playbook documents limitations around:
+
+* low-volume authentication attacks;
+* distributed source addresses;
+* slow attacks;
+* command variation;
+* timestamp manipulation;
+* duplicate events;
+* evidence deletion;
+* legitimate administrative activity.
+
+These limitations feed into detection-engineering improvements and additional validation tests.
 
 ---
 
