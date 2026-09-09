@@ -1051,17 +1051,22 @@ Command-line analysis
 Parent-child relationships
 Endpoint investigation
 ATT&CK mapping
-CASE-004 — Malware Execution
+CASE-004 — Suspicious Post-Authentication Privileged Session
 
 Evidence should demonstrate:
 
-File identification
-Hash analysis
-Entropy analysis
-YARA results
-Process activity
-Network activity
-Response
+Authentication telemetry
+Failed-to-successful authentication correlation
+Privileged session telemetry
+Command activity
+Identity and privilege enumeration
+Timeline reconstruction
+Indicators
+MITRE ATT&CK mapping
+Investigation findings
+Response recommendation
+Compromise assessment
+Lessons learned
 CASE-005 — Suspicious Network Activity
 
 Evidence should demonstrate:
@@ -1071,15 +1076,22 @@ Destination analysis
 Connection patterns
 Endpoint correlation
 Hunting
-CASE-006 — Account Compromise
+CASE-006 — Web Attack / SQL Injection
 
 Evidence should demonstrate:
 
-Authentication anomalies
-Account activity
-Post-authentication behavior
-Identity investigation
-Response
+HTTP request telemetry
+Source IP correlation
+SQL injection indicator analysis
+Application and endpoint context
+Suspicious request clustering
+Benign request comparison
+Detection and alert validation
+Indicators
+MITRE ATT&CK mapping
+Web attack investigation
+Response recommendation
+Detection improvement
 CASE-007 — File Integrity Violation
 
 Evidence should demonstrate:
@@ -1089,15 +1101,21 @@ Hash comparison
 Process correlation
 User context
 Integrity investigation
-CASE-008 — Web Attack
+CASE-008 — Planned Future Investigation
+
+This case is currently a scaffold and has not yet been implemented.
 
 Evidence should demonstrate:
 
-HTTP telemetry
-Attack pattern identification
-Application context
+Scenario-specific telemetry
+Detection
+Alert validation
+Triage
+Investigation
 Indicators
+MITRE ATT&CK mapping
 Response
+Detection improvement
 CASE-009 — Linux Security Incident
 
 Evidence should demonstrate:
