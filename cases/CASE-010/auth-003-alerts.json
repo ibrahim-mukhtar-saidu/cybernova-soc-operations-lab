@@ -1,0 +1,81 @@
+{
+  "schema_version": "1.0",
+  "generated_by": "CYBERNOVA SOC Detection Engine",
+  "detection_id": "DET-AUTH-003",
+  "alert_count": 1,
+  "alerts": [
+    {
+      "alert_id": "ALERT-CASE-004-DET-AUTH-003",
+      "detection_id": "DET-AUTH-003",
+      "detection_name": "Suspicious Post-Authentication Privileged Session",
+      "detection_version": "1.0",
+      "status": "open",
+      "severity": "high",
+      "confidence": "high",
+      "evidence_classification": "observed_evidence",
+      "event_type": "authentication_sequence",
+      "source_ip": "198.51.100.90",
+      "host": "lab-linux-10",
+      "user": "root",
+      "failed_authentication_count": 6,
+      "successful_authentication_event_id": "EVT-010007",
+      "session_start_event_id": "EVT-010008",
+      "post_authentication_command_count": 4,
+      "privileged_activity_indicators": [
+        "id",
+        "sudo -l"
+      ],
+      "session_id": "SES-010-A",
+      "correlation_window_minutes": 5,
+      "first_seen": "2026-09-09T10:00:01+00:00",
+      "last_seen": "2026-09-09T10:03:21+00:00",
+      "supporting_event_ids": [
+        "EVT-010001",
+        "EVT-010002",
+        "EVT-010003",
+        "EVT-010004",
+        "EVT-010005",
+        "EVT-010006",
+        "EVT-010007",
+        "EVT-010008",
+        "EVT-010009",
+        "EVT-010010",
+        "EVT-010011",
+        "EVT-010012"
+      ],
+      "rationale": "Observed 6 failed password authentication attempts against the same account and source IP, followed by successful authentication, a correlated session start, and 4 post-authentication command events. Privileged activity indicators observed: id, sudo -l.",
+      "analyst_interpretation": "The telemetry shows a suspicious authentication-to-session sequence involving a privileged account and subsequent enumeration activity. This is observed evidence of a suspicious sequence and does not independently prove account compromise or malicious intent.",
+      "recommended_action": "Verify whether the authentication was authorized, confirm ownership of the source IP and account, review the complete session activity, correlate identity and endpoint telemetry, and escalate for containment consideration if unauthorized access is confirmed.",
+      "mitre_attack": {
+        "tactics": [
+          "credential_access",
+          "persistence",
+          "discovery",
+          "privilege_escalation"
+        ],
+        "techniques": [
+          {
+            "technique": "T1110",
+            "name": "Brute Force"
+          },
+          {
+            "technique": "T1078",
+            "name": "Valid Accounts"
+          },
+          {
+            "technique": "T1087",
+            "name": "Account Discovery"
+          },
+          {
+            "technique": "T1069.001",
+            "name": "Permission Groups Discovery: Local"
+          },
+          {
+            "technique": "T1059.004",
+            "name": "Unix Shell"
+          }
+        ]
+      }
+    }
+  ]
+}

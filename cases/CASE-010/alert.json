@@ -1,0 +1,78 @@
+{
+  "schema_version": "1.0",
+  "generated_by": "CYBERNOVA SOC Correlation Engine",
+  "detection_id": "DET-CORR-001",
+  "alert_count": 1,
+  "alerts": [
+    {
+      "alert_id": "ALERT-CASE-010-DET-CORR-001",
+      "detection_id": "DET-CORR-001",
+      "detection_name": "Multi-Stage Attack Correlation",
+      "detection_version": "1.0",
+      "status": "open",
+      "severity": "critical",
+      "confidence": "high",
+      "first_seen": "2026-09-09T10:02:03Z",
+      "last_seen": "2026-09-09T10:12:00Z",
+      "host": "lab-linux-10",
+      "user": "root",
+      "source_ip": "198.51.100.90",
+      "stage_count": 3,
+      "stages": [
+        {
+          "detection_id": "DET-AUTH-001",
+          "stage": "credential_access",
+          "alert_id": "ALERT-CASE-001-DET-AUTH-001",
+          "timestamp": "2026-09-09T10:02:03Z"
+        },
+        {
+          "detection_id": "DET-AUTH-003",
+          "stage": "post_authentication_activity",
+          "alert_id": "ALERT-CASE-004-DET-AUTH-003",
+          "timestamp": "2026-09-09T10:03:21+00:00"
+        },
+        {
+          "detection_id": "DET-LINUX-001",
+          "stage": "persistence",
+          "alert_id": "ALERT-CASE-009-DET-LINUX-001-EVT-010013",
+          "timestamp": "2026-09-09T10:12:00Z"
+        }
+      ],
+      "supporting_alert_ids": [
+        "ALERT-CASE-001-DET-AUTH-001",
+        "ALERT-CASE-004-DET-AUTH-003",
+        "ALERT-CASE-009-DET-LINUX-001-EVT-010013"
+      ],
+      "supporting_event_ids": [
+        "EVT-010001",
+        "EVT-010002",
+        "EVT-010003",
+        "EVT-010004",
+        "EVT-010005",
+        "EVT-010006",
+        "EVT-010007",
+        "EVT-010008",
+        "EVT-010009",
+        "EVT-010010",
+        "EVT-010011",
+        "EVT-010012",
+        "EVT-010013"
+      ],
+      "mitre_attack": {
+        "tactics": [
+          "credential_access",
+          "discovery",
+          "persistence"
+        ],
+        "techniques": [
+          "T1110",
+          "T1078",
+          "T1087",
+          "T1069.001",
+          "T1053.003"
+        ]
+      },
+      "analyst_interpretation": "Observed correlated authentication attack, post-authentication privileged activity, and Linux cron persistence alerts on the same lab host and user within the configured correlation window. The correlated evidence supports investigation of a multi-stage attack sequence but does not independently prove compromise."
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "schema_version": "1.0",
+  "generated_by": "CYBERNOVA SOC Detection Engine",
+  "detection_id": "DET-AUTH-001",
+  "alert_count": 1,
+  "alerts": [
+    {
+      "alert_id": "ALERT-CASE-001-DET-AUTH-001",
+      "detection_id": "DET-AUTH-001",
+      "detection_name": "SSH Brute-Force Authentication Detection",
+      "detection_version": "1.0",
+      "status": "open",
+      "severity": "high",
+      "confidence": "high",
+      "evidence_classification": {
+        "observed_evidence": [
+          "6 failed SSH authentication attempts",
+          "successful authentication observed after failures"
+        ],
+        "analyst_interpretation": "The telemetry is consistent with an SSH brute-force authentication pattern. A successful authentication after the failures increases investigative priority, but does not independently prove account compromise."
+      },
+      "event_type": "authentication",
+      "protocol": "ssh",
+      "host": "lab-linux-10",
+      "source_ip": "198.51.100.90",
+      "user": "root",
+      "failed_attempt_count": 6,
+      "threshold": {
+        "failed_attempts": 5,
+        "window_minutes": 5
+      },
+      "first_seen": "2026-09-09T10:00:01Z",
+      "last_seen": "2026-09-09T10:01:25Z",
+      "timestamp": "2026-09-09T10:02:03Z",
+      "successful_authentication_observed": true,
+      "successful_authentication_event_id": "EVT-010007",
+      "supporting_event_ids": [
+        "EVT-010001",
+        "EVT-010002",
+        "EVT-010003",
+        "EVT-010004",
+        "EVT-010005",
+        "EVT-010006",
+        "EVT-010007"
+      ],
+      "rationale": "6 failed authentication attempts from the same source and user were followed by a successful authentication.",
+      "evidence": {
+        "observed_evidence": [
+          "6 failed SSH authentication attempts",
+          "successful authentication observed after failures"
+        ],
+        "analyst_interpretation": "The telemetry is consistent with an SSH brute-force authentication pattern. A successful authentication after the failures increases investigative priority, but does not independently prove account compromise."
+      },
+      "mitre_attack": {
+        "tactics": [
+          "credential-access"
+        ],
+        "techniques": [
+          "T1110"
+        ],
+        "subtechniques": [
+          "T1110.001"
+        ]
+      },
+      "recommended_action": "Validate whether the source and account activity were authorized. Preserve supporting authentication telemetry, review endpoint and identity evidence, and investigate the successful authentication if it was not expected."
+    }
+  ]
+}

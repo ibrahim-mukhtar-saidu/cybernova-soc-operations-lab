@@ -1,0 +1,84 @@
+id: DET-CORR-001
+name: Multi-Stage Attack Correlation
+version: "1.0"
+status: implemented
+
+description: >
+  Correlates multiple independent high-confidence detection alerts
+  into a single multi-stage attack sequence when the alerts share
+  investigation pivots and occur in chronological order within the
+  configured correlation window.
+
+input:
+  type: detection_alerts
+  required_fields:
+    - alert_id
+    - detection_id
+    - timestamp
+    - severity
+    - confidence
+    - host
+    - user
+    - supporting_event_ids
+
+logic:
+  required_stages:
+    - DET-AUTH-001
+    - DET-AUTH-003
+    - DET-LINUX-001
+
+  correlation_pivots:
+    - host
+    - user
+    - source_ip
+
+  correlation_window_minutes: 30
+
+  sequence:
+    - credential_access
+    - post_authentication_activity
+    - persistence
+
+  minimum_stages: 3
+
+alert:
+  severity: critical
+  confidence: high
+  output:
+    - alert_id
+    - detection_id
+    - detection_name
+    - detection_version
+    - status
+    - severity
+    - confidence
+    - first_seen
+    - last_seen
+    - host
+    - user
+    - source_ip
+    - stage_count
+    - stages
+    - supporting_alert_ids
+    - supporting_event_ids
+    - mitre_attack
+    - analyst_interpretation
+
+mitre_attack:
+  tactics:
+    - credential_access
+    - discovery
+    - persistence
+  techniques:
+    - T1110
+    - T1078
+    - T1087
+    - T1069.001
+    - T1053.003
+
+limitations:
+  - Correlation increases confidence in a multi-stage sequence but does not independently prove compromise.
+  - Shared pivots may occur in legitimate administrative activity.
+  - Missing telemetry can prevent correlation of related stages.
+  - Timestamp manipulation or incomplete telemetry can affect sequence reconstruction.
+  - Correlation is limited to alerts supplied to the correlation layer.
