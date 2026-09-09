@@ -1,0 +1,61 @@
+{
+  "schema_version": "1.0",
+  "generated_by": "CYBERNOVA SOC Detection Engine",
+  "detection_id": "DET-WEB-001",
+  "alert_count": 1,
+  "alerts": [
+    {
+      "alert_id": "ALERT-CASE-006-DET-WEB-001",
+      "detection_id": "DET-WEB-001",
+      "detection_name": "Suspicious SQL Injection Activity",
+      "detection_version": "1.0",
+      "severity": "high",
+      "confidence": "high",
+      "timestamp": "2026-09-09T09:02:40Z",
+      "source_ip": "203.0.113.50",
+      "host": "lab-web-01",
+      "user": "anonymous",
+      "suspicious_request_count": 6,
+      "targeted_paths": [
+        "/login",
+        "/products"
+      ],
+      "indicators": [
+        "sql_boolean_or",
+        "sql_boolean_test",
+        "sql_comment_marker",
+        "sql_union_select",
+        "sqlmap_user_agent"
+      ],
+      "supporting_event_ids": [
+        "EVT-006003",
+        "EVT-006004",
+        "EVT-006005",
+        "EVT-006006",
+        "EVT-006007",
+        "EVT-006008"
+      ],
+      "first_seen": "2026-09-09T09:01:00Z",
+      "last_seen": "2026-09-09T09:02:40Z",
+      "risk_score": 100,
+      "evidence_classification": {
+        "observed_evidence": [
+          "repeated web requests containing SQL injection indicators",
+          "multiple distinct SQL injection patterns",
+          "automated SQL injection tooling identified by user-agent"
+        ],
+        "analyst_interpretation": [
+          "activity is consistent with SQL injection probing",
+          "observed requests do not by themselves prove successful exploitation"
+        ]
+      },
+      "analyst_guidance": [
+        "Review web server and application logs for corresponding errors.",
+        "Validate whether any suspicious requests resulted in unauthorized data access.",
+        "Review the source IP across other web applications and hosts.",
+        "Inspect application-layer controls and parameterized query usage.",
+        "Do not classify the application as compromised solely from this detection."
+      ]
+    }
+  ]
+}
