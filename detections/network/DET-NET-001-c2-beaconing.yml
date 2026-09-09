@@ -1,0 +1,160 @@
+detection_id: DET-NET-001
+name: Suspicious C2 Beaconing Activity
+version: "1.0"
+status: experimental
+description: >
+  Detects repeated outbound network connections from the same process
+  to the same external destination at a regular interval when combined
+  with suspicious process characteristics.
+
+data_source:
+  - network_connection
+  - process_start
+  - process_network_correlation
+
+required_fields:
+  - event_id
+  - timestamp
+  - event_type
+  - source
+  - destination
+  - direction
+  - action
+  - status
+  - metadata
+
+network_filter:
+  event_type: network_connection
+  direction: outbound
+  status: success
+
+correlation:
+  group_by:
+    - source.host
+    - source.process_name
+    - source.process_path
+    - destination.ip
+    - destination.port
+
+  minimum_connections: 5
+  maximum_window_minutes: 10
+
+  beaconing:
+    enabled: true
+    minimum_connections: 5
+    expected_interval_seconds: 60
+    interval_tolerance_seconds: 10
+    minimum_regularity_ratio: 0.75
+
+suspicious_indicators:
+  non_standard_destination_port:
+    enabled: true
+    ports:
+      - 8443
+
+  unsigned_process:
+    enabled: true
+    metadata_field: signed
+    expected_value: false
+
+  user_writable_process_path:
+    enabled: true
+    paths:
+      - "C:\\Users\\Public\\"
+
+  suspicious_process_name:
+    enabled: true
+    process_names:
+      - svchost_update.exe
+
+  process_network_correlation:
+    enabled: true
+    minimum_connection_count: 5
+
+scoring:
+  base_score: 20
+
+  indicators:
+    repeated_connections: 20
+    regular_beacon_interval: 20
+    non_standard_destination_port: 10
+    unsigned_process: 15
+    user_writable_path: 10
+    suspicious_process_name: 10
+    process_network_correlation: 15
+
+  thresholds:
+    low: 0
+    medium: 40
+    high: 70
+    critical: 90
+
+severity:
+  default: medium
+  escalated: high
+
+confidence:
+  default: medium
+  escalated: high
+
+escalation:
+  conditions:
+    - repeated_connections
+    - regular_beacon_interval
+    - unsigned_process
+    - user_writable_path
+    - process_network_correlation
+
+mitre_attack:
+  tactics:
+    - command_and_control
+  techniques:
+    - id: T1071
+      name: Application Layer Protocol
+    - id: T1071.001
+      name: Web Protocols
+    - id: T1573
+      name: Encrypted Channel
+
+case_reference:
+  positive:
+    - EVT-005006
+    - EVT-005007
+    - EVT-005008
+    - EVT-005009
+    - EVT-005010
+    - EVT-005011
+    - EVT-005012
+    - EVT-005013
+    - EVT-005014
+
+  negative:
+    - EVT-005001
+    - EVT-005002
+    - EVT-005003
+    - EVT-005004
+    - EVT-005005
+    - EVT-005015
+
+evidence_classification:
+  observed_evidence:
+    - repeated outbound connections
+    - regular approximately 60-second connection interval
+    - unsigned executable
+    - executable located in user-writable directory
+    - repeated connection to destination port 8443
+    - process-network correlation event
+
+  analyst_interpretation:
+    - activity is consistent with automated C2 beaconing
+    - process characteristics increase suspicion
+    - network activity alone does not establish compromise
+    - destination infrastructure requires independent validation
+
+analyst_guidance:
+  - Validate the process hash against trusted intelligence sources.
+  - Review the process creation chain and parent process.
+  - Investigate DNS and TLS metadata associated with the destination.
+  - Search for the same destination across other hosts.
+  - Review endpoint activity before and after the beaconing sequence.
+  - Do not classify the host as compromised solely from beaconing evidence.

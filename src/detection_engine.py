@@ -8,6 +8,7 @@ Implemented detections:
     DET-AUTH-002 - Password Spraying Authentication Detection
     DET-AUTH-003 - Suspicious Post-Authentication Privileged Session
     DET-ENDPOINT-001 - Suspicious PowerShell Execution
+    DET-NET-001 - Suspicious C2 Beaconing Activity
 
 Purpose:
     Read normalized telemetry, validate the input,
@@ -82,6 +83,25 @@ DETECTION_ENDPOINT_001_VERSION = "1.0"
 ENDPOINT_001_CORRELATION_WINDOW_MINUTES = 5
 
 
+# ---------------------------------------------------------------------------
+# DET-NET-001: Suspicious C2 Beaconing
+# ---------------------------------------------------------------------------
+
+DETECTION_NET_001 = "DET-NET-001"
+DETECTION_NET_001_NAME = "Suspicious C2 Beaconing Activity"
+DETECTION_NET_001_VERSION = "1.0"
+
+NET_001_MIN_CONNECTIONS = 5
+NET_001_WINDOW_MINUTES = 10
+NET_001_EXPECTED_INTERVAL_SECONDS = 60
+NET_001_INTERVAL_TOLERANCE_SECONDS = 10
+NET_001_MIN_REGULARITY_RATIO = 0.75
+
+
+# ---------------------------------------------------------------------------
+# Telemetry schemas
+# ---------------------------------------------------------------------------
+
 AUTH_REQUIRED_FIELDS = {
     "event_id",
     "timestamp",
@@ -109,22 +129,42 @@ ENDPOINT_REQUIRED_FIELDS = {
     "metadata",
 }
 
+NETWORK_REQUIRED_FIELDS = {
+    "event_id",
+    "timestamp",
+    "event_type",
+    "source",
+    "direction",
+    "action",
+    "status",
+}
+
 VALID_FAILURE_STATUSES = {"failure"}
+
 VALID_FAILURE_ACTIONS = {
     "login_failure",
     "authentication_failure",
 }
 
 SUCCESS_STATUSES = {"success"}
+
 SUCCESS_ACTIONS = {
     "login_success",
     "authentication_success",
 }
 
 
+# ---------------------------------------------------------------------------
+# Exceptions
+# ---------------------------------------------------------------------------
+
 class TelemetryValidationError(ValueError):
     """Raised when telemetry does not meet the expected schema."""
 
+
+# ---------------------------------------------------------------------------
+# Generic telemetry helpers
+# ---------------------------------------------------------------------------
 
 def parse_timestamp(value: str) -> datetime:
     """Parse an ISO-8601 timestamp and normalize it to UTC."""
@@ -189,7 +229,7 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
                     f"line {line_number}: event must be a JSON object"
                 )
 
-            event_id = event["event_id"]
+            event_id = event.get("event_id")
 
             if not isinstance(event_id, str) or not event_id.strip():
                 raise TelemetryValidationError(
@@ -229,7 +269,9 @@ def validate_event_fields(
 ) -> None:
     """Validate fields according to the telemetry event type."""
 
-    if event["event_type"] == "authentication":
+    event_type = event["event_type"]
+
+    if event_type == "authentication":
         missing = AUTH_REQUIRED_FIELDS - set(event)
 
         if missing:
@@ -256,83 +298,562 @@ def validate_event_fields(
 
         return
 
-    if event["source"] == "endpoint":
-        missing = ENDPOINT_REQUIRED_FIELDS - set(event)
+    if event_type == "session_start":
+        required = {
+            "event_id",
+            "timestamp",
+            "event_type",
+            "source",
+            "host",
+            "user",
+        }
+
+        missing = required - set(event)
 
         if missing:
             missing_fields = ", ".join(sorted(missing))
             raise TelemetryValidationError(
-                f"line {line_number}: missing endpoint fields: "
+                f"line {line_number}: missing session fields: "
                 f"{missing_fields}"
             )
 
-        if event["event_type"] not in {
-            "process_creation",
-            "network_connection",
-        }:
+        if event["source"] != "authentication":
             raise TelemetryValidationError(
-                f"line {line_number}: unsupported endpoint event_type: "
-                f"{event['event_type']}"
+                f"line {line_number}: invalid session source"
             )
 
-        if not isinstance(event["metadata"], dict):
+        return
+
+    if event_type == "command_execution":
+        required = {
+            "event_id",
+            "timestamp",
+            "event_type",
+            "source",
+            "host",
+            "user",
+            "command_line",
+        }
+
+        missing = required - set(event)
+
+        if missing:
+            missing_fields = ", ".join(sorted(missing))
             raise TelemetryValidationError(
-                f"line {line_number}: endpoint metadata must be an object"
+                f"line {line_number}: missing command fields: "
+                f"{missing_fields}"
             )
 
+        if event["source"] != "authentication":
+            raise TelemetryValidationError(
+                f"line {line_number}: invalid command source"
+            )
 
-def is_ssh_authentication_event(
+        if not isinstance(event["command_line"], str):
+            raise TelemetryValidationError(
+                f"line {line_number}: command_line must be a string"
+            )
+
+        return
+
+    if event_type == "network_connection":
+        if event["source"] == "endpoint":
+            missing = ENDPOINT_REQUIRED_FIELDS - set(event)
+
+            if missing:
+                missing_fields = ", ".join(sorted(missing))
+                raise TelemetryValidationError(
+                    f"line {line_number}: missing endpoint fields: "
+                    f"{missing_fields}"
+                )
+
+            return
+
+        if "destination" not in event:
+            raise TelemetryValidationError(
+                f"line {line_number}: network event missing destination"
+            )
+
+        if not isinstance(event["destination"], dict):
+            raise TelemetryValidationError(
+                f"line {line_number}: destination must be an object"
+            )
+
+        for field in ("ip", "port", "protocol"):
+            if field not in event["destination"]:
+                raise TelemetryValidationError(
+                    f"line {line_number}: destination missing {field}"
+                )
+
+        if not isinstance(event["source"], dict):
+            raise TelemetryValidationError(
+                f"line {line_number}: network source must be an object"
+            )
+
+        for field in (
+            "host",
+            "ip",
+            "process_name",
+            "process_path",
+        ):
+            if field not in event["source"]:
+                raise TelemetryValidationError(
+                    f"line {line_number}: network source missing {field}"
+                )
+
+        return
+
+    if event_type == "process_start":
+        if not isinstance(event["source"], dict):
+            raise TelemetryValidationError(
+                f"line {line_number}: process source must be an object"
+            )
+
+        source = event["source"]
+
+        for field in (
+            "host",
+            "ip",
+            "process_name",
+            "process_path",
+            "pid",
+        ):
+            if field not in source:
+                raise TelemetryValidationError(
+                    f"line {line_number}: process source missing {field}"
+                )
+
+        return
+
+    if event_type == "process_network_correlation":
+        if not isinstance(event["source"], dict):
+            raise TelemetryValidationError(
+                f"line {line_number}: correlation source must be an object"
+            )
+
+        if not isinstance(event["destination"], dict):
+            raise TelemetryValidationError(
+                f"line {line_number}: correlation destination must be an object"
+            )
+
+        for field in (
+            "host",
+            "ip",
+            "process_name",
+            "process_path",
+            "pid",
+        ):
+            if field not in event["source"]:
+                raise TelemetryValidationError(
+                    f"line {line_number}: correlation source missing {field}"
+                )
+
+        for field in ("ip", "port", "protocol"):
+            if field not in event["destination"]:
+                raise TelemetryValidationError(
+                    f"line {line_number}: correlation destination missing {field}"
+                )
+
+        if "connection_count" not in event.get("metadata", {}):
+            raise TelemetryValidationError(
+                f"line {line_number}: correlation metadata missing connection_count"
+            )
+
+        return
+
+    if event_type == "process_creation":
+        if event["source"] == "endpoint":
+            missing = ENDPOINT_REQUIRED_FIELDS - set(event)
+
+            if missing:
+                missing_fields = ", ".join(sorted(missing))
+                raise TelemetryValidationError(
+                    f"line {line_number}: missing endpoint fields: "
+                    f"{missing_fields}"
+                )
+
+            return
+
+    raise TelemetryValidationError(
+        f"line {line_number}: unsupported event type/source combination"
+    )
+
+
+def events_in_window(
+    events: list[dict[str, Any]],
+    start: datetime,
+    end: datetime,
+) -> list[dict[str, Any]]:
+    """Return events whose timestamps fall within an inclusive window."""
+
+    return [
+        event
+        for event in events
+        if start <= event["_parsed_timestamp"] <= end
+    ]
+
+
+# ---------------------------------------------------------------------------
+# DET-AUTH-001 helpers
+# ---------------------------------------------------------------------------
+
+def is_failed_authentication(
     event: dict[str, Any],
 ) -> bool:
-    """Return True when an event represents SSH authentication."""
-
-    protocol = str(
-        event.get("protocol") or ""
-    ).lower()
-
-    port = event.get("port")
+    """Return True when an event represents a failed authentication."""
 
     return (
-        event.get("event_type") == "authentication"
-        and (
-            protocol == "ssh"
-            or port == 22
+        event["event_type"] == "authentication"
+        and event["status"] in VALID_FAILURE_STATUSES
+        and event["action"] in VALID_FAILURE_ACTIONS
+    )
+
+
+def is_successful_authentication(
+    event: dict[str, Any],
+) -> bool:
+    """Return True when an event represents a successful authentication."""
+
+    return (
+        event["event_type"] == "authentication"
+        and event["status"] in SUCCESS_STATUSES
+        and event["action"] in SUCCESS_ACTIONS
+    )
+
+
+def build_auth_001_alert(
+    source_ip: str,
+    user: str,
+    host: str,
+    threshold_events: list[dict[str, Any]],
+    success_event: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Build a deterministic DET-AUTH-001 alert."""
+
+    first_event = threshold_events[0]
+    last_event = threshold_events[-1]
+
+    supporting_event_ids = [
+        event["event_id"]
+        for event in threshold_events
+    ]
+
+    if success_event is not None:
+        supporting_event_ids.append(
+            success_event["event_id"]
         )
+
+    escalated = success_event is not None
+
+    severity = "high" if escalated else "medium"
+
+    if escalated:
+        timestamp = success_event["timestamp"]
+        successful_authentication_observed = True
+        successful_authentication_event_id = (
+            success_event["event_id"]
+        )
+        rationale = (
+            f"{len(threshold_events)} failed authentication attempts "
+            "from the same source and user were followed by a "
+            "successful authentication."
+        )
+        observed_evidence = [
+            f"{len(threshold_events)} failed SSH authentication attempts",
+            "successful authentication observed after failures",
+        ]
+    else:
+        timestamp = last_event["timestamp"]
+        successful_authentication_observed = False
+        successful_authentication_event_id = None
+        rationale = (
+            f"{len(threshold_events)} failed authentication attempts "
+            f"for user '{user}' from {source_ip} occurred within "
+            f"{AUTH_001_WINDOW_MINUTES} minutes. No subsequent "
+            "successful SSH authentication was observed in the "
+            "supplied telemetry."
+        )
+        observed_evidence = [
+            f"{len(threshold_events)} failed SSH authentication attempts",
+            "no subsequent successful authentication observed",
+        ]
+
+    return {
+        "alert_id": "ALERT-CASE-001-DET-AUTH-001",
+        "detection_id": DETECTION_AUTH_001,
+        "detection_name": DETECTION_AUTH_001_NAME,
+        "detection_version": DETECTION_AUTH_001_VERSION,
+        "status": "open",
+        "severity": severity,
+        "confidence": "high",
+        "evidence_classification": {
+            "observed_evidence": observed_evidence,
+            "analyst_interpretation": (
+                "The telemetry is consistent with an SSH brute-force "
+                "authentication pattern. A successful authentication "
+                "after the failures increases investigative priority, "
+                "but does not independently prove account compromise."
+            ),
+        },
+        "event_type": "authentication",
+        "protocol": "ssh",
+        "host": host,
+        "source_ip": source_ip,
+        "user": user,
+        "failed_attempt_count": len(threshold_events),
+        "threshold": {
+            "failed_attempts": AUTH_001_FAILURE_THRESHOLD,
+            "window_minutes": AUTH_001_WINDOW_MINUTES,
+        },
+        "first_seen": first_event["timestamp"],
+        "last_seen": last_event["timestamp"],
+        "timestamp": timestamp,
+        "successful_authentication_observed": (
+            successful_authentication_observed
+        ),
+        "successful_authentication_event_id": (
+            successful_authentication_event_id
+        ),
+        "supporting_event_ids": supporting_event_ids,
+        "rationale": rationale,
+        "evidence": {
+            "observed_evidence": observed_evidence,
+            "analyst_interpretation": (
+                "The telemetry is consistent with an SSH brute-force "
+                "authentication pattern. A successful authentication "
+                "after the failures increases investigative priority, "
+                "but does not independently prove account compromise."
+            ),
+        },
+        "mitre_attack": {
+            "tactics": ["credential-access"],
+            "techniques": ["T1110"],
+            "subtechniques": ["T1110.001"],
+        },
+        "recommended_action": (
+            "Validate whether the source and account activity were "
+            "authorized. Preserve supporting authentication telemetry, "
+            "review endpoint and identity evidence, and investigate "
+            "the successful authentication if it was not expected."
+        ),
+    }
+
+def detect_auth_001(
+    events: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Detect SSH brute-force authentication activity."""
+
+    alerts: list[dict[str, Any]] = []
+
+    grouped: defaultdict[
+        tuple[str, str],
+        list[dict[str, Any]],
+    ] = defaultdict(list)
+
+    for event in events:
+        if not is_failed_authentication(event):
+            continue
+
+        key = (
+            str(event["source_ip"]),
+            str(event["user"]),
+        )
+        grouped[key].append(event)
+
+    for key, failures in grouped.items():
+        failures.sort(
+            key=lambda event: event["_parsed_timestamp"]
+        )
+
+        for index, first_failure in enumerate(failures):
+            window_end = (
+                first_failure["_parsed_timestamp"]
+                + timedelta(minutes=AUTH_001_WINDOW_MINUTES)
+            )
+
+            threshold_events = [
+                event
+                for event in failures[index:]
+                if event["_parsed_timestamp"] <= window_end
+            ]
+
+            if len(threshold_events) < AUTH_001_FAILURE_THRESHOLD:
+                continue
+
+            threshold_time = threshold_events[
+                AUTH_001_FAILURE_THRESHOLD - 1
+            ]["_parsed_timestamp"]
+
+            success_event = None
+
+            for candidate in events:
+                if not is_successful_authentication(candidate):
+                    continue
+
+
+                if candidate.get("source_ip") != key[0]:
+                    continue
+
+                if candidate.get("user") != key[1]:
+                    continue
+
+                if candidate["_parsed_timestamp"] <= threshold_time:
+                    continue
+
+                success_event = candidate
+                break
+
+            host = str(threshold_events[0]["host"])
+
+            alerts.append(
+                build_auth_001_alert(
+                    source_ip=key[0],
+                    user=key[1],
+                    host=host,
+                    threshold_events=threshold_events,
+                    success_event=success_event,
+                )
+            )
+
+            break
+
+    return alerts
+
+# ---------------------------------------------------------------------------
+# DET-AUTH-002 helpers
+# ---------------------------------------------------------------------------
+
+def build_auth_002_alert(
+    source_ip: str,
+    host: str,
+    threshold_events: list[dict[str, Any]],
+    success_event: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Build a deterministic DET-AUTH-002 alert."""
+
+    first_event = threshold_events[0]
+    last_event = threshold_events[-1]
+
+    targeted_users = sorted(
+        {
+            str(event["user"])
+            for event in threshold_events
+        }
     )
 
+    supporting_event_ids = [
+        event["event_id"]
+        for event in threshold_events
+    ]
 
-def is_failure(event: dict[str, Any]) -> bool:
-    """Identify failed SSH authentication events."""
+    escalated = success_event is not None
 
-    return (
-        is_ssh_authentication_event(event)
-        and str(
-            event.get("status", "")
-        ).lower() in VALID_FAILURE_STATUSES
-        and str(
-            event.get("action", "")
-        ).lower() in VALID_FAILURE_ACTIONS
-    )
+    if success_event is not None:
+        supporting_event_ids.append(
+            success_event["event_id"]
+        )
 
+        timestamp = success_event["timestamp"]
+        alert_source_ip = success_event["source_ip"]
+        alert_host = success_event["host"]
+        successful_authentication_observed = True
+        successful_authentication_event_id = (
+            success_event["event_id"]
+        )
+        successful_authentication_user = (
+            success_event["user"]
+        )
+        severity = "high"
+        confidence = "high"
+        observed_evidence = [
+            f"{len(threshold_events)} failed authentication attempts",
+            f"{len(targeted_users)} distinct targeted users",
+            "successful authentication observed",
+        ]
+        rationale = (
+            f"Source {source_ip} targeted "
+            f"{len(targeted_users)} users with "
+            f"{len(threshold_events)} failed authentication "
+            "attempts before a successful login."
+        )
+    else:
+        timestamp = last_event["timestamp"]
+        alert_source_ip = source_ip
+        alert_host = host
+        successful_authentication_observed = False
+        successful_authentication_event_id = None
+        successful_authentication_user = None
+        severity = "medium"
+        confidence = "medium"
+        observed_evidence = [
+            f"{len(threshold_events)} failed authentication attempts",
+            f"{len(targeted_users)} distinct targeted users",
+            "no successful authentication observed",
+        ]
+        rationale = (
+            f"Source {source_ip} targeted "
+            f"{len(targeted_users)} users with "
+            f"{len(threshold_events)} failed authentication "
+            "attempts within the password-spraying detection window. "
+            "No successful authentication from the source was "
+            "observed in the supplied telemetry."
+        )
 
-def is_success(event: dict[str, Any]) -> bool:
-    """Identify successful SSH authentication events."""
-
-    return (
-        is_ssh_authentication_event(event)
-        and str(
-            event.get("status", "")
-        ).lower() in SUCCESS_STATUSES
-        and str(
-            event.get("action", "")
-        ).lower() in SUCCESS_ACTIONS
-    )
-
+    return {
+        "alert_id": (
+            f"ALERT-CASE-002-{DETECTION_AUTH_002}"
+        ),
+        "detection_id": DETECTION_AUTH_002,
+        "detection_name": DETECTION_AUTH_002_NAME,
+        "detection_version": DETECTION_AUTH_002_VERSION,
+        "severity": severity,
+        "confidence": confidence,
+        "status": "open",
+        "timestamp": timestamp,
+        "source_ip": alert_source_ip,
+        "host": alert_host,
+        "targeted_user_count": len(targeted_users),
+        "targeted_users": targeted_users,
+        "failed_attempt_count": len(threshold_events),
+        "successful_authentication_observed": (
+            successful_authentication_observed
+        ),
+        "successful_authentication_event_id": (
+            successful_authentication_event_id
+        ),
+        "successful_authentication_user": (
+            successful_authentication_user
+        ),
+        "supporting_event_ids": supporting_event_ids,
+        "evidence_classification": {
+            "observed_evidence": observed_evidence,
+            "analyst_interpretation": (
+                "The source exhibited password-spraying behavior "
+                "across multiple accounts. A successful authentication "
+                "increases risk but does not by itself prove account "
+                "compromise."
+            ),
+        },
+        "mitre_attack": {
+            "tactics": ["credential_access"],
+            "techniques": [
+                {
+                    "id": "T1110",
+                    "name": "Brute Force",
+                },
+                {
+                    "id": "T1110.003",
+                    "name": "Password Spraying",
+                },
+            ],
+        },
+        "rationale": rationale,
+    }
 
 def is_password_authentication(
     event: dict[str, Any],
 ) -> bool:
-    """Identify password-based authentication."""
+    """Return True when an authentication event uses password authentication."""
 
     metadata = event.get("metadata")
 
@@ -346,458 +867,105 @@ def is_password_authentication(
     return method == "password"
 
 
-# ---------------------------------------------------------------------------
-# DET-AUTH-001
-# ---------------------------------------------------------------------------
-
-
-def find_threshold_window(
-    failures: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]] | None, datetime | None]:
-    """
-    Find the first five-minute window containing at least five failures.
-
-    Events are already sorted chronologically.
-    """
-
-    window = timedelta(
-        minutes=AUTH_001_WINDOW_MINUTES
-    )
-
-    for index, first_event in enumerate(failures):
-        first_time = first_event["_parsed_timestamp"]
-        matching: list[dict[str, Any]] = []
-
-        for candidate in failures[index:]:
-            candidate_time = candidate["_parsed_timestamp"]
-
-            if candidate_time - first_time <= window:
-                matching.append(candidate)
-            else:
-                break
-
-        if len(matching) >= AUTH_001_FAILURE_THRESHOLD:
-            return matching, first_time
-
-    return None, None
-
-
-def find_success_after_threshold(
-    events: list[dict[str, Any]],
-    source_ip: str,
-    user: str,
-    threshold_time: datetime,
-) -> dict[str, Any] | None:
-    """Find a successful SSH authentication after the threshold."""
-
-    for event in events:
-        if (
-            is_success(event)
-            and event.get("source_ip") == source_ip
-            and event.get("user") == user
-            and event["_parsed_timestamp"] >= threshold_time
-        ):
-            return event
-
-    return None
-
-
-def build_auth_001_alert(
-    source_ip: str,
-    user: str,
-    host: str,
-    threshold_events: list[dict[str, Any]],
-    success_event: dict[str, Any] | None,
-) -> dict[str, Any]:
-    """Build a DET-AUTH-001 alert."""
-
-    first_event = threshold_events[0]
-    last_event = threshold_events[-1]
-
-    escalated = success_event is not None
-
-    supporting_event_ids = [
-        event["event_id"]
-        for event in threshold_events
-    ]
-
-    if success_event is not None:
-        supporting_event_ids.append(
-            success_event["event_id"]
-        )
-
-    severity = "high" if escalated else "medium"
-
-    if escalated:
-        rationale = (
-            f"Observed {len(threshold_events)} failed SSH "
-            f"authentication attempts for user '{user}' from "
-            f"{source_ip} within {AUTH_001_WINDOW_MINUTES} minutes, "
-            "followed by a successful SSH authentication. The "
-            "successful authentication is an observed event and "
-            "does not independently prove account compromise."
-        )
-    else:
-        rationale = (
-            f"Observed {len(threshold_events)} failed SSH "
-            f"authentication attempts for user '{user}' from "
-            f"{source_ip} within {AUTH_001_WINDOW_MINUTES} minutes. "
-            "No subsequent successful SSH authentication was "
-            "observed in the supplied telemetry."
-        )
-
-    return {
-        "alert_id": "ALERT-CASE-001-DET-AUTH-001",
-        "detection_id": DETECTION_AUTH_001,
-        "detection_name": DETECTION_AUTH_001_NAME,
-        "detection_version": DETECTION_AUTH_001_VERSION,
-        "status": "open",
-        "severity": severity,
-        "confidence": "high",
-        "evidence_classification": "observed_evidence",
-        "event_type": "authentication",
-        "protocol": "ssh",
-        "host": host,
-        "source_ip": source_ip,
-        "user": user,
-        "failed_attempt_count": len(threshold_events),
-        "threshold": {
-            "failed_attempts": AUTH_001_FAILURE_THRESHOLD,
-            "window_minutes": AUTH_001_WINDOW_MINUTES,
-        },
-        "first_seen": first_event["timestamp"],
-        "last_seen": last_event["timestamp"],
-        "successful_authentication_observed": (
-            success_event is not None
-        ),
-        "successful_authentication_event_id": (
-            success_event["event_id"]
-            if success_event
-            else None
-        ),
-        "supporting_event_ids": supporting_event_ids,
-        "rationale": rationale,
-        "mitre_attack": {
-            "tactic": "credential-access",
-            "technique": "T1110",
-            "subtechnique": "T1110.001",
-        },
-        "analyst_interpretation": (
-            "The telemetry is consistent with an SSH brute-force "
-            "authentication pattern. If the subsequent successful "
-            "authentication is unexpected, additional identity, "
-            "endpoint, and network evidence should be collected "
-            "before determining whether the account was compromised."
-        ),
-        "recommended_action": (
-            "Validate whether the source and account activity were "
-            "authorized. Preserve supporting authentication telemetry, "
-            "review endpoint and identity evidence, and investigate "
-            "the successful authentication if it was not expected."
-        ),
-    }
-
-
-def detect_auth_001(
-    events: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """Run DET-AUTH-001 against authentication telemetry."""
-
-    grouped_failures: dict[
-        tuple[str, str],
-        list[dict[str, Any]],
-    ] = defaultdict(list)
-
-    for event in events:
-        if is_failure(event):
-            key = (
-                str(event["source_ip"]),
-                str(event["user"]),
-            )
-            grouped_failures[key].append(event)
-
-    alerts: list[dict[str, Any]] = []
-
-    for (
-        source_ip,
-        user,
-    ), failures in sorted(grouped_failures.items()):
-
-        threshold_events, threshold_time = (
-            find_threshold_window(failures)
-        )
-
-        if (
-            threshold_events is None
-            or threshold_time is None
-        ):
-            continue
-
-        host = str(
-            threshold_events[0]["host"]
-        )
-
-        success_event = find_success_after_threshold(
-            events=events,
-            source_ip=source_ip,
-            user=user,
-            threshold_time=threshold_time,
-        )
-
-        alerts.append(
-            build_auth_001_alert(
-                source_ip=source_ip,
-                user=user,
-                host=host,
-                threshold_events=threshold_events,
-                success_event=success_event,
-            )
-        )
-
-    return alerts
-
-
-# ---------------------------------------------------------------------------
-# DET-AUTH-002
-# ---------------------------------------------------------------------------
-
-
-def find_password_spray_window(
-    failures: list[dict[str, Any]],
-) -> tuple[
-    list[dict[str, Any]] | None,
-    datetime | None,
-]:
-    """
-    Find the first five-minute window satisfying the password-spraying
-    thresholds.
-
-    Requirements:
-        - at least 6 failed password authentications
-        - at least 6 distinct users
-    """
-
-    window = timedelta(
-        minutes=AUTH_002_WINDOW_MINUTES
-    )
-
-    for index, first_event in enumerate(failures):
-        first_time = first_event["_parsed_timestamp"]
-        matching: list[dict[str, Any]] = []
-
-        for candidate in failures[index:]:
-            candidate_time = candidate["_parsed_timestamp"]
-
-            if candidate_time - first_time <= window:
-                matching.append(candidate)
-            else:
-                break
-
-        distinct_users = {
-            str(event["user"])
-            for event in matching
-        }
-
-        if (
-            len(matching) >= AUTH_002_MIN_FAILURES
-            and len(distinct_users)
-            >= AUTH_002_MIN_DISTINCT_USERS
-        ):
-            return matching, first_time
-
-    return None, None
-
-
-def find_success_from_source(
-    events: list[dict[str, Any]],
-    source_ip: str,
-    threshold_time: datetime,
-) -> dict[str, Any] | None:
-    """
-    Find the first successful SSH authentication from the spraying
-    source at or after the detected threshold.
-    """
-
-    for event in events:
-        if (
-            is_success(event)
-            and event.get("source_ip") == source_ip
-            and event["_parsed_timestamp"] >= threshold_time
-        ):
-            return event
-
-    return None
-
-
-def build_auth_002_alert(
-    source_ip: str,
-    host: str,
-    threshold_events: list[dict[str, Any]],
-    success_event: dict[str, Any] | None,
-) -> dict[str, Any]:
-    """Build a DET-AUTH-002 password-spraying alert."""
-
-    first_event = threshold_events[0]
-    last_event = threshold_events[-1]
-
-    distinct_users = sorted(
-        {
-            str(event["user"])
-            for event in threshold_events
-        }
-    )
-
-    supporting_event_ids = [
-        event["event_id"]
-        for event in threshold_events
-    ]
-
-    if success_event is not None:
-        supporting_event_ids.append(
-            success_event["event_id"]
-        )
-
-    escalated = success_event is not None
-
-    severity = "high" if escalated else "medium"
-    confidence = "high" if escalated else "medium"
-
-    if escalated:
-        rationale = (
-            f"Observed {len(threshold_events)} failed password "
-            f"SSH authentication attempts from {source_ip} "
-            f"against {len(distinct_users)} distinct users within "
-            f"{AUTH_002_WINDOW_MINUTES} minutes, followed by a "
-            f"successful SSH authentication for user "
-            f"'{success_event['user']}'. The success is observed "
-            "telemetry and does not independently prove account "
-            "compromise."
-        )
-    else:
-        rationale = (
-            f"Observed {len(threshold_events)} failed password "
-            f"SSH authentication attempts from {source_ip} "
-            f"against {len(distinct_users)} distinct users within "
-            f"{AUTH_002_WINDOW_MINUTES} minutes. No successful "
-            "SSH authentication from the same source was observed "
-            "after the detection threshold in the supplied telemetry."
-        )
-
-    return {
-        "alert_id": "ALERT-CASE-002-DET-AUTH-002",
-        "detection_id": DETECTION_AUTH_002,
-        "detection_name": DETECTION_AUTH_002_NAME,
-        "detection_version": DETECTION_AUTH_002_VERSION,
-        "status": "open",
-        "severity": severity,
-        "confidence": confidence,
-        "evidence_classification": "observed_evidence",
-        "event_type": "authentication",
-        "protocol": "ssh",
-        "host": host,
-        "source_ip": source_ip,
-        "targeted_user_count": len(distinct_users),
-        "targeted_users": distinct_users,
-        "failed_attempt_count": len(threshold_events),
-        "authentication_method": "password",
-        "threshold": {
-            "minimum_failed_attempts": AUTH_002_MIN_FAILURES,
-            "minimum_distinct_users": AUTH_002_MIN_DISTINCT_USERS,
-            "window_minutes": AUTH_002_WINDOW_MINUTES,
-        },
-        "first_seen": first_event["timestamp"],
-        "last_seen": last_event["timestamp"],
-        "successful_authentication_observed": (
-            success_event is not None
-        ),
-        "successful_authentication_event_id": (
-            success_event["event_id"]
-            if success_event
-            else None
-        ),
-        "successful_authentication_user": (
-            success_event["user"]
-            if success_event
-            else None
-        ),
-        "supporting_event_ids": supporting_event_ids,
-        "rationale": rationale,
-        "mitre_attack": {
-            "tactic": "credential-access",
-            "technique": "T1110",
-            "subtechnique": "T1110.003",
-            "name": "Password Spraying",
-        },
-        "analyst_interpretation": (
-            "The telemetry is consistent with a password-spraying "
-            "authentication pattern because one source attempted "
-            "password authentication against multiple distinct "
-            "accounts within a short time window. The observed "
-            "successful authentication increases investigation "
-            "priority but does not independently establish account "
-            "compromise."
-        ),
-        "recommended_action": (
-            "Validate whether the source and authentication activity "
-            "were authorized. Review identity, endpoint, and network "
-            "telemetry for the targeted account, preserve the "
-            "supporting events, and investigate the successful "
-            "authentication for user "
-            f"'{success_event['user'] if success_event else 'N/A'}'."
-        ),
-    }
-
-
 def detect_auth_002(
     events: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Run DET-AUTH-002 against authentication telemetry."""
+    """Detect password spraying authentication activity."""
 
-    grouped_failures: dict[
+    alerts: list[dict[str, Any]] = []
+
+    failures_by_source: defaultdict[
+        str,
+        list[dict[str, Any]],
+    ] = defaultdict(list)
+
+    successes_by_source: defaultdict[
         str,
         list[dict[str, Any]],
     ] = defaultdict(list)
 
     for event in events:
         if (
-            is_failure(event)
+            is_failed_authentication(event)
             and is_password_authentication(event)
         ):
-            source_ip = str(
+            failures_by_source[
                 event["source_ip"]
-            )
-            grouped_failures[source_ip].append(event)
+            ].append(event)
 
-    alerts: list[dict[str, Any]] = []
+        elif is_successful_authentication(event):
+            successes_by_source[
+                event["source_ip"]
+            ].append(event)
 
-    for source_ip, failures in sorted(
-        grouped_failures.items()
-    ):
-        threshold_events, threshold_time = (
-            find_password_spray_window(failures)
-        )
-
-        if (
-            threshold_events is None
-            or threshold_time is None
-        ):
+    for source_ip, failures in failures_by_source.items():
+        if len(failures) < AUTH_002_MIN_FAILURES:
             continue
 
-        host = str(
-            threshold_events[0]["host"]
+        failures.sort(
+            key=lambda event: event["_parsed_timestamp"]
         )
 
-        success_event = find_success_from_source(
-            events=events,
-            source_ip=source_ip,
-            threshold_time=threshold_time,
-        )
+        qualifying_window: list[dict[str, Any]] | None = None
+
+        for index, first_failure in enumerate(failures):
+            window_end = (
+                first_failure["_parsed_timestamp"]
+                + timedelta(minutes=AUTH_002_WINDOW_MINUTES)
+            )
+
+            window_failures = [
+                event
+                for event in failures[index:]
+                if event["_parsed_timestamp"] <= window_end
+            ]
+
+            targeted_users = {
+                event["user"]
+                for event in window_failures
+            }
+
+            if (
+                len(window_failures) >= AUTH_002_MIN_FAILURES
+                and len(targeted_users)
+                >= AUTH_002_MIN_DISTINCT_USERS
+            ):
+                qualifying_window = window_failures
+                break
+
+        if qualifying_window is None:
+            continue
+
+        first_failure = qualifying_window[0]
+        last_failure = qualifying_window[-1]
+
+        successes = [
+            event
+            for event in successes_by_source.get(source_ip, [])
+            if (
+                first_failure["_parsed_timestamp"]
+                <= event["_parsed_timestamp"]
+            )
+        ]
+
+
+        success_event = successes[0] if successes else None
+
+        campaign_failures = [
+            event
+            for event in failures
+            if (
+                first_failure["_parsed_timestamp"]
+                <= event["_parsed_timestamp"]
+                <= last_failure["_parsed_timestamp"]
+            )
+        ]
 
         alerts.append(
             build_auth_002_alert(
                 source_ip=source_ip,
-                host=host,
-                threshold_events=threshold_events,
+                host=first_failure["host"],
+                threshold_events=campaign_failures,
                 success_event=success_event,
             )
         )
@@ -806,32 +974,10 @@ def detect_auth_002(
 
 
 # ---------------------------------------------------------------------------
-# DET-ENDPOINT-001
+# DET-ENDPOINT-001 helpers
 # ---------------------------------------------------------------------------
 
-
-def endpoint_process_name(event: dict[str, Any]) -> str:
-    """Return a normalized endpoint process name."""
-
-    return str(event.get("process") or "").lower()
-
-
-def endpoint_command_line(event: dict[str, Any]) -> str:
-    """Return a normalized endpoint command line."""
-
-    return str(event.get("command_line") or "").lower()
-
-
-def endpoint_metadata(event: dict[str, Any]) -> dict[str, Any]:
-    """Return endpoint metadata when it is a dictionary."""
-
-    metadata = event.get("metadata")
-    return metadata if isinstance(metadata, dict) else {}
-
-
 def is_powershell_event(event: dict[str, Any]) -> bool:
-    """Identify PowerShell process creation events."""
-
     return (
         event.get("source") == "endpoint"
         and event.get("event_type") == "process_creation"
@@ -841,8 +987,6 @@ def is_powershell_event(event: dict[str, Any]) -> bool:
 
 
 def has_encoded_command(event: dict[str, Any]) -> bool:
-    """Identify encoded PowerShell command indicators."""
-
     command_line = endpoint_command_line(event)
     metadata = endpoint_metadata(event)
 
@@ -859,12 +1003,8 @@ def has_encoded_command(event: dict[str, Any]) -> bool:
 
 
 def has_suspicious_parent(event: dict[str, Any]) -> bool:
-    """Identify suspicious Office parent processes."""
-
     metadata = endpoint_metadata(event)
-    parent = str(
-        metadata.get("parent_process") or ""
-    ).lower()
+    parent = str(metadata.get("parent_process") or "").lower()
 
     return parent in {
         "winword.exe",
@@ -876,22 +1016,17 @@ def has_suspicious_parent(event: dict[str, Any]) -> bool:
 
 
 def has_hidden_window(event: dict[str, Any]) -> bool:
-    """Identify hidden PowerShell execution."""
-
     command_line = endpoint_command_line(event)
 
     return (
         "-windowstyle hidden" in command_line
         or "-w hidden" in command_line
-        or str(
-            endpoint_metadata(event).get("window_style") or ""
-        ).lower() == "hidden"
+        or str(endpoint_metadata(event).get("window_style") or "").lower()
+        == "hidden"
     )
 
 
 def get_process_id(event: dict[str, Any]) -> str | None:
-    """Return the endpoint process ID as a normalized string."""
-
     value = endpoint_metadata(event).get("process_id")
 
     if value is None:
@@ -900,80 +1035,235 @@ def get_process_id(event: dict[str, Any]) -> str | None:
     return str(value)
 
 
-def has_correlated_network_activity(
-    events: list[dict[str, Any]],
-    process_event: dict[str, Any],
-) -> dict[str, Any] | None:
-    """Find network activity associated with the PowerShell process."""
+def endpoint_process_name(
+    event: dict[str, Any],
+) -> str:
+    """Return the endpoint process name."""
 
-    process_id = get_process_id(process_event)
+    process = event.get("process", "")
+
+    if isinstance(process, dict):
+        return str(process.get("name", ""))
+
+    if isinstance(process, str):
+        return process
+
+    return ""
+
+
+def endpoint_metadata(
+    event: dict[str, Any],
+) -> dict[str, Any]:
+    """Return endpoint metadata safely."""
+
+    metadata = event.get("metadata", {})
+
+    if isinstance(metadata, dict):
+        return metadata
+
+    return {}
+
+
+def endpoint_command_line(
+    event: dict[str, Any],
+) -> str:
+    """Return normalized endpoint command line."""
+
+    value = event.get("command_line", "")
+
+    if isinstance(value, str):
+        return value.lower()
+
+    return ""
+
+
+def endpoint_has_indicator(
+    event: dict[str, Any],
+    indicator: str,
+) -> bool:
+    """Check an endpoint event for a named suspicious indicator."""
+
+    metadata = endpoint_metadata(event)
+    command_line = endpoint_command_line(event)
+
+    if indicator == "encoded_command":
+        return (
+            "-encodedcommand" in command_line
+            or "-enc " in command_line
+            or (
+                str(metadata.get("command_type") or "").lower()
+                == "encoded_command"
+                and str(metadata.get("encoding") or "").lower()
+                == "base64"
+            )
+        )
+
+    if indicator == "suspicious_parent":
+        parent_process = str(
+            metadata.get("parent_process") or ""
+        ).lower()
+
+        return (
+            metadata.get("suspicious_parent") is True
+            or parent_process in {
+                "winword.exe",
+                "excel.exe",
+                "outlook.exe",
+                "powerpnt.exe",
+                "msaccess.exe",
+            }
+        )
+
+    if indicator == "hidden_window":
+        return has_hidden_window(event)
+
+    return False
+
+
+def endpoint_event_score(
+    event: dict[str, Any],
+) -> tuple[int, list[str]]:
+    """Calculate the suspicious PowerShell score."""
+
+    score = 40
+    indicators: list[str] = []
+
+    if endpoint_has_indicator(event, "encoded_command"):
+        score += 25
+        indicators.append("encoded_command")
+
+    metadata = endpoint_metadata(event)
+
+    if (
+        str(metadata.get("command_type") or "").lower()
+        == "encoded_command"
+    ):
+        score += 15
+
+    if endpoint_has_indicator(event, "suspicious_parent"):
+        score += 20
+        indicators.append("suspicious_parent")
+
+    if endpoint_has_indicator(event, "hidden_window"):
+        score += 15
+        indicators.append("hidden_window")
+
+    return min(score, 100), indicators
+
+def endpoint_correlated_network_activity(
+    event: dict[str, Any],
+    events: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Return a network event correlated to the same PowerShell process."""
+
+    process_id = endpoint_metadata(event).get("process_id")
 
     if process_id is None:
         return None
 
-    start = process_event["_parsed_timestamp"]
-    end = start + timedelta(
-        minutes=ENDPOINT_001_CORRELATION_WINDOW_MINUTES
+    process_id = str(process_id)
+
+    timestamp = event["_parsed_timestamp"]
+    host = event.get("host")
+    user = event.get("user")
+
+    window_end = (
+        timestamp
+        + timedelta(minutes=ENDPOINT_001_CORRELATION_WINDOW_MINUTES)
     )
 
-    for event in events:
-        if event.get("event_type") != "network_connection":
+    for candidate in events:
+        if candidate["event_type"] != "network_connection":
             continue
 
-        if event.get("host") != process_event.get("host"):
+        if candidate.get("host") != host:
             continue
 
-        if event.get("user") != process_event.get("user"):
+        if candidate.get("user") != user:
             continue
 
-        if get_process_id(event) != process_id:
+        candidate_process_id = endpoint_metadata(candidate).get("process_id")
+
+        if candidate_process_id is None:
             continue
 
-        timestamp = event["_parsed_timestamp"]
+        if str(candidate_process_id) != process_id:
+            continue
 
-        if start <= timestamp <= end:
-            return event
+        if not (
+            timestamp
+            <= candidate["_parsed_timestamp"]
+            <= window_end
+        ):
+            continue
+
+        return candidate
 
     return None
+
+
+def endpoint_correlated_child_process(
+    event: dict[str, Any],
+    events: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Return a child process associated with the PowerShell process."""
+
+    process_id = endpoint_metadata(event).get("process_id")
+
+    if process_id is None:
+        return None
+
+    process_id = str(process_id)
+
+    timestamp = event["_parsed_timestamp"]
+    host = event.get("host")
+    user = event.get("user")
+
+    window_end = (
+        timestamp
+        + timedelta(minutes=ENDPOINT_001_CORRELATION_WINDOW_MINUTES)
+    )
+
+    for candidate in events:
+        if candidate.get("event_type") != "process_creation":
+            continue
+
+        if candidate.get("host") != host:
+            continue
+
+        if candidate.get("user") != user:
+            continue
+
+        metadata = endpoint_metadata(candidate)
+
+        if str(metadata.get("parent_pid")) != process_id:
+            continue
+
+        candidate_timestamp = candidate["_parsed_timestamp"]
+
+        if timestamp <= candidate_timestamp <= window_end:
+            return candidate
+
+    return None
+
+def has_correlated_network_activity(
+    events: list[dict[str, Any]],
+    process_event: dict[str, Any],
+) -> dict[str, Any] | None:
+    return endpoint_correlated_network_activity(
+        process_event,
+        events,
+    )
 
 
 def has_correlated_child_process(
     events: list[dict[str, Any]],
     process_event: dict[str, Any],
 ) -> dict[str, Any] | None:
-    """Find a child process associated with the PowerShell process."""
-
-    process_id = get_process_id(process_event)
-
-    if process_id is None:
-        return None
-
-    start = process_event["_parsed_timestamp"]
-    end = start + timedelta(
-        minutes=ENDPOINT_001_CORRELATION_WINDOW_MINUTES
+    return endpoint_correlated_child_process(
+        process_event,
+        events,
     )
-
-    for event in events:
-        if event.get("event_type") != "process_creation":
-            continue
-
-        if event.get("host") != process_event.get("host"):
-            continue
-
-        if event.get("user") != process_event.get("user"):
-            continue
-
-        metadata = endpoint_metadata(event)
-
-        if str(metadata.get("parent_pid")) != process_id:
-            continue
-
-        timestamp = event["_parsed_timestamp"]
-
-        if start <= timestamp <= end:
-            return event
-
-    return None
 
 
 def build_endpoint_001_alert(
@@ -1054,12 +1344,24 @@ def build_endpoint_001_alert(
         "status": "open",
         "severity": severity,
         "confidence": confidence,
-        "evidence_classification": "observed_evidence",
+        "timestamp": process_event["timestamp"],
+        "event_id": process_event["event_id"],
+        "evidence_classification": {
+            "observed_evidence": indicators,
+            "analyst_interpretation": (
+                "The endpoint event contains multiple suspicious "
+                "PowerShell characteristics. The observed telemetry "
+                "supports investigation but does not independently "
+                "prove malicious intent."
+            ),
+        },
         "event_type": "process_creation",
         "host": process_event["host"],
         "user": process_event["user"],
         "process": process_event["process"],
+        "process_name": endpoint_process_name(process_event),
         "process_id": metadata.get("process_id"),
+        "file_path": process_event["file_path"],
         "parent_process": metadata.get("parent_process"),
         "command_line": process_event["command_line"],
         "risk_score": score,
@@ -1086,10 +1388,20 @@ def build_endpoint_001_alert(
               "independently establish malicious intent or compromise."
         ),
         "mitre_attack": {
-            "tactic": "execution",
-            "technique": "T1059",
-            "subtechnique": "T1059.001",
-            "name": "PowerShell",
+            "tactics": [
+                "execution",
+                "defense_evasion",
+            ],
+            "techniques": [
+                {
+                    "id": "T1059",
+                    "name": "Command and Scripting Interpreter",
+                },
+                {
+                    "id": "T1059.001",
+                    "name": "PowerShell",
+                },
+            ],
         },
         "analyst_interpretation": (
             "The observed process lineage and correlated endpoint "
@@ -1106,6 +1418,7 @@ def build_endpoint_001_alert(
             "is unauthorized."
         ),
     }
+
 
 
 def detect_endpoint_001(
@@ -1155,12 +1468,9 @@ def detect_endpoint_001(
 
 
 
-# ---------------------------------------------------------------------------
-# DET-AUTH-003: Suspicious Post-Authentication Privileged Session
-# ---------------------------------------------------------------------------
-
-
-def auth_003_session_id(event: dict[str, Any]) -> str | None:
+def auth_003_session_id(
+    event: dict[str, Any],
+) -> str | None:
     """Return the normalized session ID from authentication telemetry."""
 
     metadata = event.get("metadata")
@@ -1205,7 +1515,7 @@ def auth_003_is_password_authentication(
 def auth_003_is_failed_authentication(
     event: dict[str, Any],
 ) -> bool:
-    """Identify failed password authentication events."""
+    """Return True for DET-AUTH-003 failed password authentication."""
 
     return (
         auth_003_is_password_authentication(event)
@@ -1481,9 +1791,506 @@ def detect_auth_003(
 
 
 # ---------------------------------------------------------------------------
-# Serialization
+# DET-NET-001 helpers
 # ---------------------------------------------------------------------------
 
+def network_source_field(
+    event: dict[str, Any],
+    field: str,
+) -> str:
+    """Return a source field from network telemetry."""
+
+    source = event.get("source", {})
+
+    if not isinstance(source, dict):
+        return ""
+
+    value = source.get(field, "")
+
+    if value is None:
+        return ""
+
+    return str(value)
+
+
+def network_destination_field(
+    event: dict[str, Any],
+    field: str,
+) -> Any:
+    """Return a destination field from network telemetry."""
+
+    destination = event.get("destination", {})
+
+    if not isinstance(destination, dict):
+        return None
+
+    return destination.get(field)
+
+
+def network_metadata(
+    event: dict[str, Any],
+) -> dict[str, Any]:
+    """Return network metadata safely."""
+
+    metadata = event.get("metadata", {})
+
+    if isinstance(metadata, dict):
+        return metadata
+
+    return {}
+
+
+def network_connection_events(
+    events: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return outbound successful network connections."""
+
+    return [
+        event
+        for event in events
+        if (
+            event["event_type"] == "network_connection"
+            and event["direction"] == "outbound"
+            and event["status"] == "success"
+        )
+    ]
+
+
+def network_group_key(
+    event: dict[str, Any],
+) -> tuple[str, str, str, str, int]:
+    """Build the DET-NET-001 correlation key."""
+
+    destination_ip = network_destination_field(
+        event,
+        "ip",
+    )
+
+    destination_port = network_destination_field(
+        event,
+        "port",
+    )
+
+    try:
+        destination_port = int(destination_port)
+    except (TypeError, ValueError):
+        destination_port = 0
+
+    return (
+        network_source_field(event, "host"),
+        network_source_field(event, "process_name"),
+        network_source_field(event, "process_path"),
+        str(destination_ip or ""),
+        destination_port,
+    )
+
+
+def calculate_intervals(
+    events: list[dict[str, Any]],
+) -> list[float]:
+    """Calculate intervals between ordered network connections."""
+
+    ordered = sorted(
+        events,
+        key=lambda event: event["_parsed_timestamp"],
+    )
+
+    intervals: list[float] = []
+
+    for previous, current in zip(
+        ordered,
+        ordered[1:],
+    ):
+        interval = (
+            current["_parsed_timestamp"]
+            - previous["_parsed_timestamp"]
+        ).total_seconds()
+
+        intervals.append(interval)
+
+    return intervals
+
+
+def calculate_beacon_regularity(
+    intervals: list[float],
+) -> tuple[float, float]:
+    """
+    Return regularity ratio and average interval.
+
+    Regularity ratio is the percentage of observed intervals
+    within the expected beacon interval tolerance.
+    """
+
+    if not intervals:
+        return 0.0, 0.0
+
+    matching = sum(
+        1
+        for interval in intervals
+        if abs(
+            interval - NET_001_EXPECTED_INTERVAL_SECONDS
+        )
+        <= NET_001_INTERVAL_TOLERANCE_SECONDS
+    )
+
+    regularity_ratio = matching / len(intervals)
+    average_interval = sum(intervals) / len(intervals)
+
+    return regularity_ratio, average_interval
+
+
+def network_process_is_unsigned(
+    event: dict[str, Any],
+) -> bool:
+    """Return True when process metadata identifies an unsigned binary."""
+
+    metadata = network_metadata(event)
+
+    return metadata.get("signed") is False
+
+
+def network_process_is_user_writable(
+    event: dict[str, Any],
+) -> bool:
+    """Return True when the process path is user-writable."""
+
+    process_path = network_source_field(
+        event,
+        "process_path",
+    ).lower()
+
+    return (
+        "\\users\\public\\" in process_path
+        or "/tmp/" in process_path
+        or "/var/tmp/" in process_path
+    )
+
+
+def network_process_name_is_suspicious(
+    event: dict[str, Any],
+) -> bool:
+    """Return True for known suspicious process naming."""
+
+    process_name = network_source_field(
+        event,
+        "process_name",
+    ).lower()
+
+    return process_name in {
+        "svchost_update.exe",
+    }
+
+
+def network_uses_non_standard_port(
+    event: dict[str, Any],
+) -> bool:
+    """Return True for the DET-NET-001 suspicious port."""
+
+    destination_port = network_destination_field(
+        event,
+        "port",
+    )
+
+    try:
+        destination_port = int(destination_port)
+    except (TypeError, ValueError):
+        return False
+
+    return destination_port == 8443
+
+
+def build_net_001_alert(
+    beacon_events: list[dict[str, Any]],
+    correlation_event: dict[str, Any] | None,
+    regularity_ratio: float,
+    average_interval: float,
+    indicators: list[str],
+    risk_score: int,
+) -> dict[str, Any]:
+    """Build a deterministic DET-NET-001 alert."""
+
+    first_event = beacon_events[0]
+    last_event = beacon_events[-1]
+
+    severity = (
+        "high"
+        if risk_score >= 70
+        else "medium"
+    )
+
+    supporting_ids = [
+        event["event_id"]
+        for event in beacon_events
+    ]
+
+    if correlation_event is not None:
+        supporting_ids.append(
+            correlation_event["event_id"]
+        )
+
+    return {
+        "alert_id": (
+            f"ALERT-CASE-005-{DETECTION_NET_001}"
+        ),
+        "detection_id": DETECTION_NET_001,
+        "detection_name": DETECTION_NET_001_NAME,
+        "detection_version": DETECTION_NET_001_VERSION,
+        "severity": severity,
+        "confidence": (
+            "high"
+            if risk_score >= 70
+            else "medium"
+        ),
+        "status": "open",
+        "timestamp": last_event["timestamp"],
+        "host": network_source_field(
+            first_event,
+            "host",
+        ),
+        "source_ip": network_source_field(
+            first_event,
+            "ip",
+        ),
+        "process_name": network_source_field(
+            first_event,
+            "process_name",
+        ),
+        "process_path": network_source_field(
+            first_event,
+            "process_path",
+        ),
+        "destination_ip": network_destination_field(
+            first_event,
+            "ip",
+        ),
+        "destination_port": network_destination_field(
+            first_event,
+            "port",
+        ),
+        "destination_domain": network_destination_field(
+            first_event,
+            "domain",
+        ),
+        "connection_count": len(beacon_events),
+        "first_connection": first_event["timestamp"],
+        "last_connection": last_event["timestamp"],
+        "average_interval_seconds": round(
+            average_interval,
+            2,
+        ),
+        "regularity_ratio": round(
+            regularity_ratio,
+            2,
+        ),
+        "risk_score": risk_score,
+        "indicators": indicators,
+        "correlation_event_id": (
+            correlation_event["event_id"]
+            if correlation_event is not None
+            else None
+        ),
+        "supporting_event_ids": supporting_ids,
+        "evidence_classification": {
+            "observed_evidence": [
+                f"{len(beacon_events)} repeated outbound connections",
+                (
+                    "approximately "
+                    f"{round(average_interval, 2)}-second average interval"
+                ),
+                (
+                    f"{round(regularity_ratio * 100, 1)}% "
+                    "interval regularity"
+                ),
+                "suspicious process characteristics",
+            ],
+            "analyst_interpretation": (
+                "The observed network pattern is consistent with "
+                "automated C2 beaconing. Process and connection "
+                "characteristics increase suspicion, but network "
+                "beaconing alone does not establish compromise."
+            ),
+        },
+        "mitre_attack": {
+            "tactics": [
+                "command_and_control",
+            ],
+            "techniques": [
+                {
+                    "id": "T1071",
+                    "name": "Application Layer Protocol",
+                },
+                {
+                    "id": "T1071.001",
+                    "name": "Web Protocols",
+                },
+                {
+                    "id": "T1573",
+                    "name": "Encrypted Channel",
+                },
+            ],
+        },
+        "rationale": (
+            "Repeated outbound connections from the same process "
+            "to the same destination occurred at a regular interval "
+            "and correlated with suspicious process characteristics."
+        ),
+    }
+
+
+def detect_net_001(
+    events: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Detect suspicious C2 beaconing activity."""
+
+    alerts: list[dict[str, Any]] = []
+
+    connections = network_connection_events(events)
+
+    grouped: defaultdict[
+        tuple[str, str, str, str, int],
+        list[dict[str, Any]],
+    ] = defaultdict(list)
+
+    for event in connections:
+        grouped[
+            network_group_key(event)
+        ].append(event)
+
+    for key, group in grouped.items():
+        ordered = sorted(
+            group,
+            key=lambda event: event["_parsed_timestamp"],
+        )
+
+        if len(ordered) < NET_001_MIN_CONNECTIONS:
+            continue
+
+        for start_index, start_event in enumerate(ordered):
+            window_end = (
+                start_event["_parsed_timestamp"]
+                + timedelta(minutes=NET_001_WINDOW_MINUTES)
+            )
+
+            window_events = [
+                event
+                for event in ordered[start_index:]
+                if event["_parsed_timestamp"] <= window_end
+            ]
+
+            if len(window_events) < NET_001_MIN_CONNECTIONS:
+                continue
+
+            intervals = calculate_intervals(window_events)
+
+            if not intervals:
+                continue
+
+            regularity_ratio, average_interval = (
+                calculate_beacon_regularity(intervals)
+            )
+
+            if regularity_ratio < NET_001_MIN_REGULARITY_RATIO:
+                continue
+
+            first_event = window_events[0]
+
+            indicators = [
+                "repeated_connections",
+                "regular_beacon_interval",
+            ]
+
+            risk_score = 20
+
+            risk_score += 20
+            risk_score += 20
+
+            if network_uses_non_standard_port(first_event):
+                indicators.append(
+                    "non_standard_destination_port"
+                )
+                risk_score += 10
+
+            if network_process_is_unsigned(first_event):
+                indicators.append(
+                    "unsigned_process"
+                )
+                risk_score += 15
+
+            if network_process_is_user_writable(first_event):
+                indicators.append(
+                    "user_writable_path"
+                )
+                risk_score += 10
+
+            if network_process_name_is_suspicious(first_event):
+                indicators.append(
+                    "suspicious_process_name"
+                )
+                risk_score += 10
+
+            correlation_event = None
+
+            for candidate in events:
+                if candidate["event_type"] != (
+                    "process_network_correlation"
+                ):
+                    continue
+
+                if network_group_key(candidate) != key:
+                    continue
+
+                metadata = network_metadata(candidate)
+
+                try:
+                    connection_count = int(
+                        metadata.get(
+                            "connection_count",
+                            0,
+                        )
+                    )
+                except (TypeError, ValueError):
+                    connection_count = 0
+
+                if connection_count < NET_001_MIN_CONNECTIONS:
+                    continue
+
+                correlation_event = candidate
+                break
+
+            if correlation_event is not None:
+                indicators.append(
+                    "process_network_correlation"
+                )
+                risk_score += 15
+
+            risk_score = min(
+                risk_score,
+                100,
+            )
+
+            if risk_score < 70:
+                continue
+
+            alerts.append(
+                build_net_001_alert(
+                    window_events,
+                    correlation_event,
+                    regularity_ratio,
+                    average_interval,
+                    indicators,
+                    risk_score,
+                )
+            )
+
+            break
+
+    return alerts
+
+
+
+# ---------------------------------------------------------------------------
+# Serialization
+# ---------------------------------------------------------------------------
 
 def remove_internal_fields(
     event: dict[str, Any],
@@ -1514,12 +2321,17 @@ def write_alerts(
         else "NONE"
     )
 
+    clean_alerts = [
+        remove_internal_fields(alert)
+        for alert in alerts
+    ]
+
     document = {
         "schema_version": "1.0",
         "generated_by": "CYBERNOVA SOC Detection Engine",
         "detection_id": detection_id,
-        "alert_count": len(alerts),
-        "alerts": alerts,
+        "alert_count": len(clean_alerts),
+        "alerts": clean_alerts,
     }
 
     with output_path.open(
@@ -1536,54 +2348,14 @@ def write_alerts(
 
 
 # ---------------------------------------------------------------------------
-# CLI
+# Detection dispatcher
 # ---------------------------------------------------------------------------
-
-
-def parse_args() -> argparse.Namespace:
-    """Parse command-line arguments."""
-
-    parser = argparse.ArgumentParser(
-        description=(
-            "Run a CYBERNOVA authentication detection "
-            "against JSONL telemetry."
-        )
-    )
-
-    parser.add_argument(
-        "--detection",
-        choices=(
-            DETECTION_AUTH_001,
-            DETECTION_AUTH_002,
-            DETECTION_AUTH_003,
-            DETECTION_ENDPOINT_001,
-        ),
-        required=True,
-        help="Detection ID to execute.",
-    )
-
-    parser.add_argument(
-        "--input",
-        required=True,
-        type=Path,
-        help="Path to normalized telemetry JSONL.",
-    )
-
-    parser.add_argument(
-        "--output",
-        required=True,
-        type=Path,
-        help="Path for generated alert JSON.",
-    )
-
-    return parser.parse_args()
-
 
 def run_detection(
     detection_id: str,
     events: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Dispatch telemetry to the selected detection."""
+    """Dispatch telemetry to the requested detection."""
 
     if detection_id == DETECTION_AUTH_001:
         return detect_auth_001(events)
@@ -1597,33 +2369,77 @@ def run_detection(
     if detection_id == DETECTION_ENDPOINT_001:
         return detect_endpoint_001(events)
 
+    if detection_id == DETECTION_NET_001:
+        return detect_net_001(events)
+
     raise ValueError(
         f"unsupported detection: {detection_id}"
     )
 
 
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def parse_args() -> argparse.Namespace:
+    """Parse command-line arguments."""
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "CYBERNOVA SOC Operations Lab Detection Engine"
+        )
+    )
+
+    parser.add_argument(
+        "--detection",
+        required=True,
+        choices=(
+            DETECTION_AUTH_001,
+            DETECTION_AUTH_002,
+            DETECTION_AUTH_003,
+            DETECTION_ENDPOINT_001,
+            DETECTION_NET_001,
+        ),
+        help="Detection rule to execute.",
+    )
+
+    parser.add_argument(
+        "--telemetry",
+        "--input",
+        dest="telemetry",
+        required=True,
+        type=Path,
+        help="Path to normalized JSONL telemetry.",
+    )
+
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="Optional path for JSON alert output.",
+    )
+
+    return parser.parse_args()
+
+
 def main() -> int:
-    """Application entry point."""
+    """CLI entry point."""
 
     args = parse_args()
 
     try:
-        events = load_jsonl(args.input)
-
-        alerts = run_detection(
-            detection_id=args.detection,
-            events=events,
+        events = load_jsonl(
+            args.telemetry
         )
 
-        write_alerts(
-            alerts=alerts,
-            output_path=args.output,
+        alerts = run_detection(
+            args.detection,
+            events,
         )
 
     except (
         FileNotFoundError,
-        TelemetryValidationError,
         OSError,
+        TelemetryValidationError,
         ValueError,
     ) as exc:
         print(
@@ -1632,69 +2448,127 @@ def main() -> int:
         )
         return 1
 
-    print(
-        "===== CYBERNOVA DETECTION ENGINE ====="
-    )
+    if args.output:
+        write_alerts(
+            alerts=alerts,
+            output_path=args.output,
+        )
+
     print(
         f"Detection: {args.detection}"
     )
     print(
-        f"Telemetry events loaded: {len(events)}"
+        f"Telemetry events: {len(events)}"
     )
     print(
         f"Alerts generated: {len(alerts)}"
     )
-    print(
-        f"Output: {args.output}"
-    )
 
     for alert in alerts:
-        print()
         print(
             f"Alert ID: {alert['alert_id']}"
         )
         print(
             f"Severity: {alert['severity']}"
         )
-        if "source_ip" in alert:
-            print(
-                f"Source IP: {alert['source_ip']}"
-            )
+        print(
+            f"Confidence: {alert['confidence']}"
+        )
 
-        if "host" in alert:
+        if args.detection == DETECTION_NET_001:
             print(
                 f"Host: {alert['host']}"
             )
+            print(
+                f"Process: {alert['process_name']}"
+            )
+            print(
+                "Destination: "
+                f"{alert['destination_ip']}:"
+                f"{alert['destination_port']}"
+            )
+            print(
+                "Connections: "
+                f"{alert['connection_count']}"
+            )
+            print(
+                "Average interval: "
+                f"{alert['average_interval_seconds']} seconds"
+            )
+            print(
+                "Risk score: "
+                f"{alert['risk_score']}"
+            )
 
-        if "user" in alert:
+        elif args.detection == DETECTION_AUTH_001:
+            print(
+                f"Source IP: {alert['source_ip']}"
+            )
             print(
                 f"User: {alert['user']}"
             )
-
-        if "targeted_user_count" in alert:
-            print(
-                "Distinct users: "
-                f"{alert['targeted_user_count']}"
-            )
-
-        if "failed_attempt_count" in alert:
             print(
                 "Failed attempts: "
                 f"{alert['failed_attempt_count']}"
             )
-
-        if "successful_authentication_observed" in alert:
             print(
                 "Successful authentication observed: "
                 f"{alert['successful_authentication_observed']}"
             )
 
-        if "risk_score" in alert:
+        elif args.detection == DETECTION_AUTH_002:
             print(
-                f"Risk score: {alert['risk_score']}"
+                f"Source IP: {alert['source_ip']}"
+            )
+            print(
+                f"Host: {alert['host']}"
+            )
+            print(
+                "Distinct users: "
+                f"{alert['targeted_user_count']}"
+            )
+            print(
+                "Failed attempts: "
+                f"{alert['failed_attempt_count']}"
+            )
+            print(
+                "Successful authentication observed: "
+                f"{alert['successful_authentication_observed']}"
             )
 
-        if "indicators" in alert:
+        elif args.detection == DETECTION_AUTH_003:
+            print(
+                f"Source IP: {alert['source_ip']}"
+            )
+            print(
+                f"User: {alert['user']}"
+            )
+            print(
+                f"Host: {alert['host']}"
+            )
+            print(
+                "Failed attempts: "
+                f"{alert['failed_authentication_count']}"
+            )
+            print(
+                "Post-authentication commands: "
+                f"{alert['post_authentication_command_count']}"
+            )
+
+        elif args.detection == DETECTION_ENDPOINT_001:
+            print(
+                f"Host: {alert['host']}"
+            )
+            print(
+                f"User: {alert['user']}"
+            )
+            print(
+                f"Process: {alert['process_name']}"
+            )
+            print(
+                "Risk score: "
+                f"{alert['risk_score']}"
+            )
             print(
                 "Indicators: "
                 + ", ".join(alert["indicators"])
