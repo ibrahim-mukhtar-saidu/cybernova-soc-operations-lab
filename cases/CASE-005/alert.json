@@ -1,0 +1,79 @@
+{
+  "schema_version": "1.0",
+  "generated_by": "CYBERNOVA SOC Detection Engine",
+  "detection_id": "DET-NET-001",
+  "alert_count": 1,
+  "alerts": [
+    {
+      "alert_id": "ALERT-CASE-005-DET-NET-001",
+      "detection_id": "DET-NET-001",
+      "detection_name": "Suspicious C2 Beaconing Activity",
+      "detection_version": "1.0",
+      "severity": "high",
+      "confidence": "high",
+      "status": "open",
+      "timestamp": "2026-09-08T11:16:10Z",
+      "host": "lab-ws-01",
+      "source_ip": "192.0.2.50",
+      "process_name": "svchost_update.exe",
+      "process_path": "C:\\Users\\Public\\svchost_update.exe",
+      "destination_ip": "198.51.100.77",
+      "destination_port": 8443,
+      "destination_domain": "cdn-update.example",
+      "connection_count": 7,
+      "first_connection": "2026-09-08T11:10:10Z",
+      "last_connection": "2026-09-08T11:16:10Z",
+      "average_interval_seconds": 60.0,
+      "regularity_ratio": 1.0,
+      "risk_score": 100,
+      "indicators": [
+        "repeated_connections",
+        "regular_beacon_interval",
+        "non_standard_destination_port",
+        "user_writable_path",
+        "suspicious_process_name",
+        "process_network_correlation"
+      ],
+      "correlation_event_id": "EVT-005013",
+      "supporting_event_ids": [
+        "EVT-005007",
+        "EVT-005008",
+        "EVT-005009",
+        "EVT-005010",
+        "EVT-005011",
+        "EVT-005012",
+        "EVT-005014",
+        "EVT-005013"
+      ],
+      "evidence_classification": {
+        "observed_evidence": [
+          "7 repeated outbound connections",
+          "approximately 60.0-second average interval",
+          "100.0% interval regularity",
+          "suspicious process characteristics"
+        ],
+        "analyst_interpretation": "The observed network pattern is consistent with automated C2 beaconing. Process and connection characteristics increase suspicion, but network beaconing alone does not establish compromise."
+      },
+      "mitre_attack": {
+        "tactics": [
+          "command_and_control"
+        ],
+        "techniques": [
+          {
+            "id": "T1071",
+            "name": "Application Layer Protocol"
+          },
+          {
+            "id": "T1071.001",
+            "name": "Web Protocols"
+          },
+          {
+            "id": "T1573",
+            "name": "Encrypted Channel"
+          }
+        ]
+      },
+      "rationale": "Repeated outbound connections from the same process to the same destination occurred at a regular interval and correlated with suspicious process characteristics."
+    }
+  ]
+}
