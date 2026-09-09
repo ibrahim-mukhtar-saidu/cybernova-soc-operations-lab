@@ -216,6 +216,17 @@ DETECTION_HOST_001 = "DET-HOST-001"
 DETECTION_HOST_001_NAME = "File Integrity Violation Detection"
 DETECTION_HOST_001_VERSION = "1.0"
 
+
+# ---------------------------------------------------------------------------
+# DET-LINUX-001: Suspicious Linux Cron Persistence
+# ---------------------------------------------------------------------------
+
+DETECTION_LINUX_001 = "DET-LINUX-001"
+DETECTION_LINUX_001_NAME = "Suspicious Linux Cron Persistence Detection"
+DETECTION_LINUX_001_VERSION = "1.0"
+
+LINUX_001_MIN_INDICATORS = 2
+
 HOST_001_WINDOW_MINUTES = 5
 HOST_001_MIN_VIOLATIONS = 2
 
@@ -274,6 +285,22 @@ HOST_REQUIRED_FIELDS = {
     "change_type",
     "old_hash",
     "new_hash",
+    "metadata",
+}
+
+
+LINUX_REQUIRED_FIELDS = {
+    "event_id",
+    "timestamp",
+    "event_type",
+    "source",
+    "host",
+    "user",
+    "action",
+    "status",
+    "process",
+    "command_line",
+    "file_path",
     "metadata",
 }
 
@@ -803,6 +830,19 @@ def validate_event_fields(
                 missing_fields = ", ".join(sorted(missing))
                 raise TelemetryValidationError(
                     f"line {line_number}: missing endpoint fields: "
+                    f"{missing_fields}"
+                )
+
+            return
+
+    if event_type == "linux_persistence":
+        if event["source"] == "linux_audit":
+            missing = LINUX_REQUIRED_FIELDS - set(event)
+
+            if missing:
+                missing_fields = ", ".join(sorted(missing))
+                raise TelemetryValidationError(
+                    f"line {line_number}: missing Linux persistence fields: "
                     f"{missing_fields}"
                 )
 
@@ -2954,6 +2994,101 @@ def write_alerts(
 
 
 # ---------------------------------------------------------------------------
+# DET-LINUX-001
+# ---------------------------------------------------------------------------
+
+def detect_linux_001(
+    events: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Detect suspicious Linux cron persistence activity."""
+
+    alerts: list[dict[str, Any]] = []
+
+    for event in events:
+        if event["event_type"] != "linux_persistence":
+            continue
+
+        if event["status"] != "success":
+            continue
+
+        indicators: list[str] = []
+
+        file_path = event["file_path"].lower()
+        command_line = event["command_line"].lower()
+        metadata = event["metadata"]
+
+        cron_paths = (
+            "/etc/cron.d/",
+            "/etc/cron.daily/",
+            "/etc/cron.hourly/",
+            "/var/spool/cron/",
+            "/var/spool/cron/crontabs/",
+        )
+
+        if file_path.startswith(cron_paths):
+            indicators.append("cron_persistence_path")
+
+        if (
+            "| crontab" in command_line
+            or "crontab <" in command_line
+            or "crontab -" in command_line
+        ) and "crontab -e" not in command_line:
+            indicators.append("suspicious_cron_command")
+
+        if (
+            ("curl " in command_line or "wget " in command_line)
+            and ("| sh" in command_line or "| bash" in command_line)
+        ):
+            indicators.append("shell_download_execution")
+
+        if (
+            "/tmp/" in command_line
+            or "/var/tmp/" in command_line
+            or "/dev/shm/" in command_line
+            or metadata.get("hidden_payload") is True
+        ):
+            indicators.append("hidden_or_tmp_payload")
+
+        if len(indicators) < LINUX_001_MIN_INDICATORS:
+            continue
+
+        alerts.append(
+            {
+                "alert_id": f"ALERT-CASE-009-DET-LINUX-001-{event['event_id']}",
+                "detection_id": DETECTION_LINUX_001,
+                "detection_name": DETECTION_LINUX_001_NAME,
+                "detection_version": DETECTION_LINUX_001_VERSION,
+                "status": "open",
+                "severity": "high",
+                "confidence": "high",
+                "timestamp": event["timestamp"],
+                "host": event["host"],
+                "user": event["user"],
+                "process": event["process"],
+                "command_line": event["command_line"],
+                "file_path": event["file_path"],
+                "indicator_count": len(indicators),
+                "indicators": indicators,
+                "supporting_event_ids": [event["event_id"]],
+                "mitre_attack": {
+                    "tactic": "persistence",
+                    "technique": "T1053.003",
+                    "name": "Cron",
+                },
+                "analyst_interpretation": (
+                    "Observed multiple indicators consistent with "
+                    "suspicious Linux cron persistence activity. "
+                    "The detection supports investigation of scheduled "
+                    "task persistence but does not independently prove "
+                    "compromise or successful persistence."
+                ),
+            }
+        )
+
+    return alerts
+
+
+# ---------------------------------------------------------------------------
 # Detection dispatcher
 # ---------------------------------------------------------------------------
 
@@ -2987,6 +3122,9 @@ def run_detection(
     if detection_id == DETECTION_HOST_001:
         return detect_host_001(events)
 
+    if detection_id == DETECTION_LINUX_001:
+        return detect_linux_001(events)
+
     raise ValueError(
         f"unsupported detection: {detection_id}"
     )
@@ -3017,6 +3155,7 @@ def parse_args() -> argparse.Namespace:
             DETECTION_NET_001,
             DETECTION_WEB_001,
             DETECTION_HOST_001,
+            DETECTION_LINUX_001,
         ),
         help="Detection rule to execute.",
     )

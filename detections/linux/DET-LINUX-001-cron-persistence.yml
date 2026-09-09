@@ -1,0 +1,64 @@
+id: DET-LINUX-001
+name: Suspicious Linux Cron Persistence Detection
+version: "1.0"
+status: implemented
+
+description: >
+  Detects suspicious Linux cron persistence activity when a successful
+  persistence-related event contains multiple independent indicators
+  associated with cron locations, cron manipulation, shell download
+  execution, or temporary/hidden payloads.
+
+data_source:
+  event_type: linux_persistence
+  required_status: success
+  required_fields:
+    - event_id
+    - timestamp
+    - event_type
+    - source
+    - host
+    - user
+    - action
+    - status
+    - process
+    - command_line
+    - file_path
+    - metadata
+
+logic:
+  grouping:
+    - per_event
+
+  suspicious_conditions:
+    - cron_persistence_path
+    - suspicious_cron_command
+    - shell_download_execution
+    - hidden_or_tmp_payload
+  minimum_indicators: 2
+
+alert:
+  severity: high
+  confidence: high
+  output:
+    - host
+    - user
+    - process
+    - command_line
+    - file_path
+    - indicator_count
+    - indicators
+    - timestamp
+    - supporting_event_ids
+
+mitre_attack:
+  tactic: persistence
+  technique: T1053.003
+  name: Cron
+
+limitations:
+  - Cron activity is not inherently malicious.
+  - Legitimate administrators may modify scheduled tasks.
+  - Suspicious indicators do not independently prove compromise.
+  - The detection does not establish persistence without investigation of the resulting cron configuration.
+  - Downloaded payloads require separate file and network analysis.

