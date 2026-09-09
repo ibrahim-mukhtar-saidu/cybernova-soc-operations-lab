@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0",
+  "generated_by": "CYBERNOVA SOC Detection Engine",
+  "detection_id": "DET-HOST-001",
+  "alert_count": 1,
+  "alerts": [
+    {
+      "alert_id": "ALERT-CASE-007-DET-HOST-001",
+      "detection_id": "DET-HOST-001",
+      "detection_name": "File Integrity Violation Detection",
+      "detection_version": "1.0",
+      "severity": "high",
+      "confidence": "high",
+      "timestamp": "2026-09-08T12:02:00Z",
+      "host": "lab-host-01",
+      "user": "root",
+      "violation_count": 2,
+      "affected_files": [
+        "/etc/passwd",
+        "/etc/ssh/sshd_config"
+      ],
+      "change_types": [
+        "modified"
+      ],
+      "first_seen": "2026-09-08T12:00:00Z",
+      "last_seen": "2026-09-08T12:02:00Z",
+      "supporting_event_ids": [
+        "EVT-007001",
+        "EVT-007002"
+      ],
+      "mitre_attack": {
+        "tactic": "defense-evasion",
+        "technique": "T1070",
+        "name": "Indicator Removal"
+      },
+      "analyst_interpretation": "Observed clustered file integrity violations within the configured detection window. The telemetry indicates file state changes but does not independently establish malicious intent."
+    }
+  ]
+}

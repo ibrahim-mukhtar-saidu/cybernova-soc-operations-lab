@@ -112,6 +112,18 @@ WEB_001_MIN_INDICATORS = 2
 
 
 # ---------------------------------------------------------------------------
+# DET-HOST-001: File Integrity Violation
+# ---------------------------------------------------------------------------
+
+DETECTION_HOST_001 = "DET-HOST-001"
+DETECTION_HOST_001_NAME = "File Integrity Violation Detection"
+DETECTION_HOST_001_VERSION = "1.0"
+
+HOST_001_WINDOW_MINUTES = 5
+HOST_001_MIN_VIOLATIONS = 2
+
+
+# ---------------------------------------------------------------------------
 # Telemetry schemas
 # ---------------------------------------------------------------------------
 
@@ -151,6 +163,23 @@ NETWORK_REQUIRED_FIELDS = {
     "action",
     "status",
 }
+
+HOST_REQUIRED_FIELDS = {
+    "event_id",
+    "timestamp",
+    "event_type",
+    "source",
+    "host",
+    "user",
+    "action",
+    "status",
+    "file_path",
+    "change_type",
+    "old_hash",
+    "new_hash",
+    "metadata",
+}
+
 
 WEB_REQUIRED_FIELDS = {
     "event_id",
@@ -518,6 +547,40 @@ def validate_event_fields(
             raise TelemetryValidationError(
                 f"line {line_number}: http_status must be an integer"
             )
+
+        if not isinstance(event["metadata"], dict):
+            raise TelemetryValidationError(
+                f"line {line_number}: metadata must be an object"
+            )
+
+        return
+
+    if event_type == "file_integrity":
+        missing = HOST_REQUIRED_FIELDS - set(event)
+
+        if missing:
+            missing_fields = ", ".join(sorted(missing))
+            raise TelemetryValidationError(
+                f"line {line_number}: missing file integrity fields: "
+                f"{missing_fields}"
+            )
+
+        for field in (
+            "host",
+            "user",
+            "file_path",
+            "change_type",
+        ):
+            if not isinstance(event[field], str) or not event[field].strip():
+                raise TelemetryValidationError(
+                    f"line {line_number}: {field} must be non-empty"
+                )
+
+        for field in ("old_hash", "new_hash"):
+            if not isinstance(event[field], str):
+                raise TelemetryValidationError(
+                    f"line {line_number}: {field} must be a string"
+                )
 
         if not isinstance(event["metadata"], dict):
             raise TelemetryValidationError(
@@ -2577,6 +2640,113 @@ def detect_web_001(
 
 
 # ---------------------------------------------------------------------------
+# DET-HOST-001
+# ---------------------------------------------------------------------------
+
+def detect_host_001(
+    events: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Detect clustered file integrity violations on a host."""
+
+    alerts: list[dict[str, Any]] = []
+
+    integrity_events = [
+        event
+        for event in events
+        if event["event_type"] == "file_integrity"
+        and event["status"] == "changed"
+        and event["change_type"] in {
+            "modified",
+            "created",
+            "deleted",
+        }
+    ]
+
+    grouped: defaultdict[
+        str,
+        list[dict[str, Any]],
+    ] = defaultdict(list)
+
+    for event in integrity_events:
+        grouped[event["host"]].append(event)
+
+    for host, host_events in grouped.items():
+        ordered = sorted(
+            host_events,
+            key=lambda event: event["_parsed_timestamp"],
+        )
+
+        for index, event in enumerate(ordered):
+            window_start = event["_parsed_timestamp"]
+            window_end = window_start + timedelta(
+                minutes=HOST_001_WINDOW_MINUTES
+            )
+
+            window_events = [
+                candidate
+                for candidate in ordered[index:]
+                if candidate["_parsed_timestamp"] <= window_end
+            ]
+
+            if len(window_events) < HOST_001_MIN_VIOLATIONS:
+                continue
+
+            affected_files = sorted(
+                {
+                    candidate["file_path"]
+                    for candidate in window_events
+                }
+            )
+
+            change_types = sorted(
+                {
+                    candidate["change_type"]
+                    for candidate in window_events
+                }
+            )
+
+            supporting_event_ids = [
+                candidate["event_id"]
+                for candidate in window_events
+            ]
+
+            alerts.append(
+                {
+                    "alert_id": "ALERT-CASE-007-DET-HOST-001",
+                    "detection_id": DETECTION_HOST_001,
+                    "detection_name": DETECTION_HOST_001_NAME,
+                    "detection_version": DETECTION_HOST_001_VERSION,
+                    "severity": "high",
+                    "confidence": "high",
+                    "timestamp": window_events[-1]["timestamp"],
+                    "host": host,
+                    "user": window_events[-1]["user"],
+                    "violation_count": len(window_events),
+                    "affected_files": affected_files,
+                    "change_types": change_types,
+                    "first_seen": window_events[0]["timestamp"],
+                    "last_seen": window_events[-1]["timestamp"],
+                    "supporting_event_ids": supporting_event_ids,
+                    "mitre_attack": {
+                        "tactic": "defense-evasion",
+                        "technique": "T1070",
+                        "name": "Indicator Removal",
+                    },
+                    "analyst_interpretation": (
+                        "Observed clustered file integrity violations "
+                        "within the configured detection window. "
+                        "The telemetry indicates file state changes but "
+                        "does not independently establish malicious intent."
+                    ),
+                }
+            )
+
+            break
+
+    return alerts
+
+
+# ---------------------------------------------------------------------------
 # Serialization
 # ---------------------------------------------------------------------------
 
@@ -2663,6 +2833,9 @@ def run_detection(
     if detection_id == DETECTION_WEB_001:
         return detect_web_001(events)
 
+    if detection_id == DETECTION_HOST_001:
+        return detect_host_001(events)
+
     raise ValueError(
         f"unsupported detection: {detection_id}"
     )
@@ -2691,6 +2864,7 @@ def parse_args() -> argparse.Namespace:
             DETECTION_ENDPOINT_001,
             DETECTION_NET_001,
             DETECTION_WEB_001,
+            DETECTION_HOST_001,
         ),
         help="Detection rule to execute.",
     )
@@ -2814,6 +2988,31 @@ def main() -> int:
             print(
                 "Risk score: "
                 f"{alert['risk_score']}"
+            )
+
+        elif args.detection == DETECTION_HOST_001:
+            print(
+                f"Host: {alert['host']}"
+            )
+            print(
+                "File integrity violations: "
+                f"{alert['violation_count']}"
+            )
+            print(
+                "Affected files: "
+                f"{', '.join(alert['affected_files'])}"
+            )
+            print(
+                "Change types: "
+                f"{', '.join(alert['change_types'])}"
+            )
+            print(
+                "First seen: "
+                f"{alert['first_seen']}"
+            )
+            print(
+                "Last seen: "
+                f"{alert['last_seen']}"
             )
 
         elif args.detection == DETECTION_AUTH_001:

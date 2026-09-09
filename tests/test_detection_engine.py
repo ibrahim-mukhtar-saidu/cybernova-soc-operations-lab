@@ -564,3 +564,67 @@ def test_auth_003_requires_four_failed_authentications(tmp_path):
 
     assert document["alert_count"] == 0
     assert document["alerts"] == []
+
+
+def test_host_001_file_integrity_detection(tmp_path):
+    telemetry = tmp_path / "host.jsonl"
+    telemetry.write_text(
+        '{"event_id":"EVT-007001","timestamp":"2026-09-08T12:00:00Z",'
+        '"event_type":"file_integrity","source":"fim","host":"lab-host-01",'
+        '"user":"root","action":"file_change","status":"changed",'
+        '"file_path":"/etc/ssh/sshd_config","change_type":"modified",'
+        '"old_hash":"aaa","new_hash":"bbb","metadata":{}}\n'
+        '{"event_id":"EVT-007002","timestamp":"2026-09-08T12:02:00Z",'
+        '"event_type":"file_integrity","source":"fim","host":"lab-host-01",'
+        '"user":"root","action":"file_change","status":"changed",'
+        '"file_path":"/etc/passwd","change_type":"modified",'
+        '"old_hash":"ccc","new_hash":"ddd","metadata":{}}\n'
+    )
+
+    output = tmp_path / "alert.json"
+
+    document = run_detection(
+        "DET-HOST-001",
+        telemetry,
+        output,
+    )
+
+    assert document["detection_id"] == "DET-HOST-001"
+    assert len(document["alerts"]) == 1
+
+    alert = document["alerts"][0]
+
+    assert alert["alert_id"] == "ALERT-CASE-007-DET-HOST-001"
+    assert alert["host"] == "lab-host-01"
+    assert alert["violation_count"] == 2
+    assert alert["affected_files"] == [
+        "/etc/passwd",
+        "/etc/ssh/sshd_config",
+    ]
+    assert alert["change_types"] == ["modified"]
+    assert alert["supporting_event_ids"] == [
+        "EVT-007001",
+        "EVT-007002",
+    ]
+
+
+def test_host_001_single_violation_does_not_trigger(tmp_path):
+    telemetry = tmp_path / "host.jsonl"
+    telemetry.write_text(
+        '{"event_id":"EVT-007003","timestamp":"2026-09-08T12:00:00Z",'
+        '"event_type":"file_integrity","source":"fim","host":"lab-host-01",'
+        '"user":"root","action":"file_change","status":"changed",'
+        '"file_path":"/etc/ssh/sshd_config","change_type":"modified",'
+        '"old_hash":"aaa","new_hash":"bbb","metadata":{}}\n'
+    )
+
+    output = tmp_path / "alert.json"
+
+    document = run_detection(
+        "DET-HOST-001",
+        telemetry,
+        output,
+    )
+
+    assert document["detection_id"] == "NONE"
+    assert document["alerts"] == []

@@ -1,0 +1,44 @@
+id: DET-HOST-001
+name: File Integrity Violation Detection
+version: "1.0"
+status: implemented
+
+description: >
+  Detects clustered file integrity violations on the same host
+  within a five-minute detection window.
+
+data_source:
+  event_type: file_integrity
+  required_status: changed
+  supported_change_types:
+    - modified
+    - created
+    - deleted
+
+logic:
+  grouping:
+    - host
+  window_minutes: 5
+  minimum_violations: 2
+
+alert:
+  severity: high
+  confidence: high
+  output:
+    - host
+    - user
+    - violation_count
+    - affected_files
+    - change_types
+    - first_seen
+    - last_seen
+    - supporting_event_ids
+
+mitre_attack:
+  technique: T1070
+  name: Indicator Removal
+
+limitations:
+  - File state changes alone do not establish malicious intent.
+  - Authorized administrative or software activity may trigger the detection.
+  - The detector identifies clustered changes but does not independently determine whether a change is unauthorized.
