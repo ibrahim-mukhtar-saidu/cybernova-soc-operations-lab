@@ -628,3 +628,69 @@ def test_host_001_single_violation_does_not_trigger(tmp_path):
 
     assert document["detection_id"] == "NONE"
     assert document["alerts"] == []
+
+
+def test_malware_001_suspicious_execution_detection(tmp_path):
+    telemetry = tmp_path / "malware.jsonl"
+    telemetry.write_text(
+        '{"event_id":"EVT-008001","timestamp":"2026-09-09T12:00:00Z",'
+        '"event_type":"process_execution","source":"endpoint",'
+        '"host":"lab-ws-02","user":"analyst","action":"process_execute",'
+        '"status":"success","process":"invoice_viewer.exe",'
+        '"command_line":"/tmp/invoice_viewer.exe --open invoice.pdf",'
+        '"file_path":"/tmp/invoice_viewer.exe",'
+        '"metadata":{"malware_indicator":true,"high_entropy":true,'
+        '"suspicious_name":true,"environment":"lab"}}\n'
+    )
+
+    output = tmp_path / "alert.json"
+
+    document = run_detection(
+        "DET-MALWARE-001",
+        telemetry,
+        output,
+    )
+
+    assert document["detection_id"] == "DET-MALWARE-001"
+    assert len(document["alerts"]) == 1
+
+    alert = document["alerts"][0]
+
+    assert alert["alert_id"] == "ALERT-CASE-008-DET-MALWARE-001"
+    assert alert["host"] == "lab-ws-02"
+    assert alert["user"] == "analyst"
+    assert alert["process"] == "invoice_viewer.exe"
+    assert alert["file_path"] == "/tmp/invoice_viewer.exe"
+    assert alert["indicator_count"] == 5
+    assert "executable_from_user_writable_path" in alert["indicators"]
+    assert "suspicious_file_extension" in alert["indicators"]
+    assert "known_malware_indicator" in alert["indicators"]
+    assert "high_entropy_executable" in alert["indicators"]
+    assert "suspicious_process_name" in alert["indicators"]
+    assert alert["supporting_event_ids"] == ["EVT-008001"]
+
+
+def test_malware_001_benign_execution_does_not_trigger(tmp_path):
+    telemetry = tmp_path / "malware-benign.jsonl"
+    telemetry.write_text(
+        '{"event_id":"EVT-008002","timestamp":"2026-09-09T12:01:00Z",'
+        '"event_type":"process_execution","source":"endpoint",'
+        '"host":"lab-ws-02","user":"analyst","action":"process_execute",'
+        '"status":"success","process":"backup_agent.exe",'
+        '"command_line":"/opt/backup/backup_agent.exe --run",'
+        '"file_path":"/opt/backup/backup_agent.exe",'
+        '"metadata":{"malware_indicator":false,"high_entropy":false,'
+        '"suspicious_name":false,"environment":"lab"}}\n'
+    )
+
+    output = tmp_path / "alert.json"
+
+    document = run_detection(
+        "DET-MALWARE-001",
+        telemetry,
+        output,
+    )
+
+    assert document["detection_id"] == "NONE"
+    assert document["alerts"] == []
+    assert document["alert_count"] == 0

@@ -1,0 +1,32 @@
+{
+  "alert_id": "ALERT-CASE-008-DET-MALWARE-001",
+  "detection_id": "DET-MALWARE-001",
+  "detection_name": "Suspicious Malware Execution Detection",
+  "detection_version": "1.0",
+  "status": "open",
+  "severity": "high",
+  "confidence": "high",
+  "timestamp": "2026-09-09T12:00:00Z",
+  "host": "lab-ws-02",
+  "user": "analyst",
+  "process": "invoice_viewer.exe",
+  "command_line": "/tmp/invoice_viewer.exe --open invoice.pdf",
+  "file_path": "/tmp/invoice_viewer.exe",
+  "indicator_count": 5,
+  "indicators": [
+    "executable_from_user_writable_path",
+    "suspicious_file_extension",
+    "known_malware_indicator",
+    "high_entropy_executable",
+    "suspicious_process_name"
+  ],
+  "supporting_event_ids": [
+    "EVT-008001"
+  ],
+  "mitre_attack": {
+    "tactic": "execution",
+    "technique": "T1204",
+    "name": "User Execution"
+  },
+  "analyst_interpretation": "Observed multiple suspicious execution indicators associated with a process execution event. The detection supports malware investigation but does not independently establish that the executable is malicious."
+}

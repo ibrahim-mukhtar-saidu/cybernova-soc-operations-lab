@@ -73,6 +73,103 @@ AUTH_003_WINDOW_MINUTES = 5
 
 
 # ---------------------------------------------------------------------------
+# DET-MALWARE-001: Suspicious Malware Execution
+# ---------------------------------------------------------------------------
+
+DETECTION_MALWARE_001 = "DET-MALWARE-001"
+DETECTION_MALWARE_001_NAME = "Suspicious Malware Execution Detection"
+DETECTION_MALWARE_001_VERSION = "1.0"
+
+MALWARE_001_MIN_INDICATORS = 2
+
+
+def detect_malware_001(
+    events: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Detect suspicious process execution using multiple indicators."""
+
+    alerts: list[dict[str, Any]] = []
+
+    for event in events:
+        if event["event_type"] != "process_execution":
+            continue
+
+        if event["status"] != "success":
+            continue
+
+        indicators: list[str] = []
+        metadata = event["metadata"]
+
+        file_path = event["file_path"].lower()
+        process = event["process"].lower()
+        command_line = event["command_line"].lower()
+
+        if file_path.startswith(("/tmp/", "/var/tmp/", "/dev/shm/")):
+            indicators.append("executable_from_user_writable_path")
+        elif "\\users\\" in file_path or "\\temp\\" in file_path:
+            indicators.append("executable_from_user_writable_path")
+
+        if file_path.endswith(
+            (".exe", ".scr", ".dll", ".bat", ".cmd", ".ps1")
+        ):
+            indicators.append("suspicious_file_extension")
+
+        if metadata.get("malware_indicator") is True:
+            indicators.append("known_malware_indicator")
+
+        if metadata.get("high_entropy") is True:
+            indicators.append("high_entropy_executable")
+
+        if metadata.get("suspicious_name") is True:
+            indicators.append("suspicious_process_name")
+
+        if "powershell" in process and (
+            "-enc" in command_line
+            or "downloadstring" in command_line
+            or "invoke-expression" in command_line
+        ):
+            indicators.append("suspicious_execution_command")
+
+        if len(indicators) < MALWARE_001_MIN_INDICATORS:
+            continue
+
+        alerts.append(
+            {
+                "alert_id": "ALERT-CASE-008-DET-MALWARE-001",
+                "detection_id": DETECTION_MALWARE_001,
+                "detection_name": DETECTION_MALWARE_001_NAME,
+                "detection_version": DETECTION_MALWARE_001_VERSION,
+                "status": "open",
+                "severity": "high",
+                "confidence": "high",
+                "timestamp": event["timestamp"],
+                "host": event["host"],
+                "user": event["user"],
+                "process": event["process"],
+                "command_line": event["command_line"],
+                "file_path": event["file_path"],
+                "indicator_count": len(indicators),
+                "indicators": indicators,
+                "supporting_event_ids": [event["event_id"]],
+                "mitre_attack": {
+                    "tactic": "execution",
+                    "technique": "T1204",
+                    "name": "User Execution",
+                },
+                "analyst_interpretation": (
+                    "Observed multiple suspicious execution indicators "
+                    "associated with a process execution event. "
+                    "The detection supports malware investigation but "
+                    "does not independently establish that the executable "
+                    "is malicious."
+                ),
+            }
+        )
+
+    return alerts
+
+
+# ---------------------------------------------------------------------------
 # DET-ENDPOINT-001: Suspicious PowerShell
 # ---------------------------------------------------------------------------
 
@@ -177,6 +274,22 @@ HOST_REQUIRED_FIELDS = {
     "change_type",
     "old_hash",
     "new_hash",
+    "metadata",
+}
+
+
+MALWARE_REQUIRED_FIELDS = {
+    "event_id",
+    "timestamp",
+    "event_type",
+    "source",
+    "host",
+    "user",
+    "action",
+    "status",
+    "process",
+    "command_line",
+    "file_path",
     "metadata",
 }
 
@@ -581,6 +694,41 @@ def validate_event_fields(
                 raise TelemetryValidationError(
                     f"line {line_number}: {field} must be a string"
                 )
+
+        if not isinstance(event["metadata"], dict):
+            raise TelemetryValidationError(
+                f"line {line_number}: metadata must be an object"
+            )
+
+        return
+
+
+    if event_type == "process_execution":
+        missing = MALWARE_REQUIRED_FIELDS - set(event)
+
+        if missing:
+            missing_fields = ", ".join(sorted(missing))
+            raise TelemetryValidationError(
+                f"line {line_number}: missing process execution fields: "
+                f"{missing_fields}"
+            )
+
+        for field in (
+            "host",
+            "user",
+            "process",
+            "command_line",
+            "file_path",
+        ):
+            if not isinstance(event[field], str) or not event[field].strip():
+                raise TelemetryValidationError(
+                    f"line {line_number}: {field} must be non-empty"
+                )
+
+        if event["status"] != "success":
+            raise TelemetryValidationError(
+                f"line {line_number}: process execution status must be success"
+            )
 
         if not isinstance(event["metadata"], dict):
             raise TelemetryValidationError(
@@ -2824,6 +2972,9 @@ def run_detection(
     if detection_id == DETECTION_AUTH_003:
         return detect_auth_003(events)
 
+    if detection_id == DETECTION_MALWARE_001:
+        return detect_malware_001(events)
+
     if detection_id == DETECTION_ENDPOINT_001:
         return detect_endpoint_001(events)
 
@@ -2861,6 +3012,7 @@ def parse_args() -> argparse.Namespace:
             DETECTION_AUTH_001,
             DETECTION_AUTH_002,
             DETECTION_AUTH_003,
+            DETECTION_MALWARE_001,
             DETECTION_ENDPOINT_001,
             DETECTION_NET_001,
             DETECTION_WEB_001,
@@ -3068,6 +3220,31 @@ def main() -> int:
             print(
                 "Post-authentication commands: "
                 f"{alert['post_authentication_command_count']}"
+            )
+
+        elif args.detection == DETECTION_MALWARE_001:
+            print(
+                f"Host: {alert['host']}"
+            )
+            print(
+                f"User: {alert['user']}"
+            )
+            print(
+                f"Process: {alert['process']}"
+            )
+            print(
+                f"File path: {alert['file_path']}"
+            )
+            print(
+                f"Indicator count: {alert['indicator_count']}"
+            )
+            print(
+                "Indicators: "
+                + ", ".join(alert["indicators"])
+            )
+            print(
+                "Supporting event IDs: "
+                + ", ".join(alert["supporting_event_ids"])
             )
 
         elif args.detection == DETECTION_ENDPOINT_001:
