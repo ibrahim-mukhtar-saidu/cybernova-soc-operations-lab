@@ -25,7 +25,7 @@ They are intended to demonstrate practical SOC analyst workflow and detection-re
 | PB-007 | Linux Security Event        | DET-LINUX-001     | Implemented |
 | PB-008 | Web Attack                  | DET-WEB-001       | Implemented |
 | PB-009 | File Integrity Violation    | DET-HOST-001      | Implemented |
-| PB-010 | Multi-Stage Attack          | DET-CORR-001      | Planned     |
+| PB-010 | Multi-Stage Attack          | DET-CORR-001      | Implemented |
 
 ---
 
