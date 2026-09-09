@@ -477,7 +477,7 @@ They should not be interpreted as claims of production authority, organizational
 
 # Response Playbooks
 
-The laboratory will progressively maintain analyst-oriented playbooks for scenarios such as:
+The laboratory is building an analyst-oriented playbook library for scenarios such as:
 
 * Brute-force activity
 * Password spraying
@@ -488,6 +488,10 @@ The laboratory will progressively maintain analyst-oriented playbooks for scenar
 * Linux security events
 * Web attacks
 * File integrity violations
+
+The current repository contains the playbook documentation framework.
+Individual scenario playbooks remain under active development and are not
+claimed as implemented until their corresponding files and evidence exist.
 
 Playbooks should provide practical guidance covering:
 
@@ -747,16 +751,7 @@ cybernova-soc-operations-lab/
 │   └── CASE-010/
 │
 ├── playbooks/
-│   ├── README.md
-│   ├── brute-force.md
-│   ├── password-spraying.md
-│   ├── suspicious-powershell.md
-│   ├── malware-execution.md
-│   ├── suspicious-network-activity.md
-│   ├── account-compromise.md
-│   ├── linux-security-event.md
-│   ├── web-attack.md
-│   └── file-integrity-violation.md
+│   └── README.md
 │
 ├── hunting/
 │   ├── README.md
