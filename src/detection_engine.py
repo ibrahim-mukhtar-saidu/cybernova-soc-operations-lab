@@ -325,6 +325,11 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
 
             event_ids.add(event_id)
 
+            if "timestamp" not in event:
+                raise TelemetryValidationError(
+                    f"line {line_number}: missing timestamp"
+                )
+
             event["_parsed_timestamp"] = parse_timestamp(
                 event["timestamp"]
             )

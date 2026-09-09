@@ -279,6 +279,41 @@ def test_invalid_telemetry_is_rejected(tmp_path):
     assert not output_path.exists()
 
 
+def test_missing_timestamp_is_rejected(tmp_path):
+    input_path = tmp_path / "missing_timestamp.jsonl"
+    output_path = tmp_path / "missing_timestamp.json"
+
+    invalid_event = {
+        "event_id": "INVALID-002",
+        "event_type": "authentication",
+    }
+
+    input_path.write_text(
+        json.dumps(invalid_event) + "\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ENGINE),
+            "--detection",
+            "DET-AUTH-001",
+            "--input",
+            str(input_path),
+            "--output",
+            str(output_path),
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert "missing timestamp" in result.stderr
+    assert not output_path.exists()
+
+
 def test_endpoint_001_suspicious_powershell_detection(tmp_path):
     output = tmp_path / "endpoint001.json"
 
