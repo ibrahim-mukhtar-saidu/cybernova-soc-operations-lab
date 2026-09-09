@@ -335,22 +335,26 @@ The important requirement is that conclusions remain traceable to available evid
 
 # Flagship Investigation Library
 
-The initial investigation library consists of ten flagship scenarios.
+The laboratory uses a ten-case flagship scenario model. Implementation is
+incremental, and the table below distinguishes completed investigation
+workflows from cases that currently have detection evidence or remain
+scaffolded.
 
-| Case         | Scenario                    | Primary Capability           |
-| ------------ | --------------------------- | ---------------------------- |
-| **CASE-001** | Brute Force Attack          | Authentication Detection     |
-| **CASE-002** | Password Spraying           | Identity Monitoring          |
-| **CASE-003** | Suspicious PowerShell       | Endpoint Detection           |
-| **CASE-004** | Malware Execution           | Malware Analysis             |
-| **CASE-005** | Suspicious Network Activity | Network Detection            |
-| **CASE-006** | Account Compromise          | Identity Investigation       |
-| **CASE-007** | File Integrity Violation    | Host Monitoring              |
-| **CASE-008** | Web Attack                  | Web Security                 |
-| **CASE-009** | Linux Security Incident     | Linux Investigation          |
-| **CASE-010** | Multi-Stage Attack          | End-to-End SOC Investigation |
+| Case         | Scenario                                      | Primary Capability              | Status |
+| ------------ | --------------------------------------------- | -------------------------------- | ------ |
+| **CASE-001** | Brute Force Attack                            | Authentication Detection         | Investigation workflow implemented |
+| **CASE-002** | Password Spraying                             | Authentication Detection         | Detection and alert evidence implemented |
+| **CASE-003** | Suspicious PowerShell                         | Endpoint Detection               | Investigation workflow implemented |
+| **CASE-004** | Suspicious Post-Authentication Privileged Session | Authentication / Session Detection | Investigation workflow implemented |
+| **CASE-005** | Suspicious Network Activity                   | Network Detection                | Detection and alert evidence implemented |
+| **CASE-006** | Web Attack / SQL Injection                    | Web Security Detection           | Detection and alert evidence implemented |
+| **CASE-007** | File Integrity Violation                      | Host Monitoring                   | Scaffolded |
+| **CASE-008** | Planned Future Investigation                  | Scenario-specific capability      | Scaffolded |
+| **CASE-009** | Linux Security Incident                      | Linux Investigation              | Scaffolded |
+| **CASE-010** | Multi-Stage Attack                            | End-to-End SOC Investigation      | Scaffolded |
 
-These cases will be implemented incrementally using controlled laboratory evidence.
+All scenarios use controlled laboratory evidence, and implementation status
+is reported according to the evidence currently present in the repository.
 
 ---
 
@@ -1070,33 +1074,39 @@ This creates a feedback loop between SOC analysis and detection engineering.
 
 # Project Status
 
-**Current Phase:** Foundation
+**Current Phase:** Implementation & Validation
 
-The repository structure, governance model, evidence standards, and documentation framework are being established before progressively implementing production-style laboratory workflows.
+The laboratory foundation is established and the repository now contains implemented
+detection pipelines, controlled security telemetry, alert validation, investigation
+workflows, automated tests, security-validation practices, and portfolio evidence.
 
-Planned development includes:
+Implemented capabilities currently include:
 
-1. Laboratory architecture
-2. Threat model
-3. Telemetry standards
-4. Detection engineering framework
-5. Alert schema
-6. Case-management framework
-7. Investigation templates
-8. Threat-hunting methodology
-9. Response playbooks
-10. Automated testing
-11. Security validation
-12. Flagship investigation cases
-13. Metrics
-14. Portfolio evidence
-15. Continuous improvement
+1. Laboratory architecture and governance
+2. Threat model and evidence-integrity standards
+3. Authentication, endpoint, network, and web telemetry
+4. Authentication, endpoint, network, and web detections
+5. Alert generation and validation
+6. CASE-001, CASE-003, and CASE-004 investigation workflows
+7. Controlled evidence and portfolio documentation
+8. Automated regression testing
+9. Security validation and defensive engineering review
+10. Threat-hunting and incident-response workflow foundations
+
+Remaining development focuses on expanding investigation coverage, completing
+additional playbooks and flagship cases, strengthening detection feedback loops,
+adding genuinely measurable laboratory metrics where supported, and continuing
+adversarial validation and engineering hardening.
 
 ---
 
 # Roadmap
 
-## Phase 1 — Foundation
+The roadmap reflects the current implementation state of the laboratory.
+Completed and implemented capabilities are distinguished from areas that
+remain under active development.
+
+## Phase 1 — Foundation — Complete
 
 * Repository structure
 * Documentation standards
@@ -1105,7 +1115,7 @@ Planned development includes:
 * Laboratory limitations
 * Portfolio evidence model
 
-## Phase 2 — Telemetry
+## Phase 2 — Telemetry — Implemented
 
 * Authentication telemetry
 * Endpoint telemetry
@@ -1113,7 +1123,7 @@ Planned development includes:
 * Web telemetry
 * Normalized event structures
 
-## Phase 3 — Detection Engineering
+## Phase 3 — Detection Engineering — Implemented / Expanding
 
 * Detection schemas
 * Detection logic
@@ -1121,16 +1131,18 @@ Planned development includes:
 * ATT&CK mappings
 * False-positive analysis
 * Detection testing
+* Additional detection coverage
 
-## Phase 4 — Alert Operations
+## Phase 4 — Alert Operations — Implemented / Expanding
 
 * Alert generation
 * Alert normalization
 * Alert validation
-* Triage workflow
+* Triage workflow foundations
 * Case creation
+* Expanded alert-operation evidence
 
-## Phase 5 — Investigation
+## Phase 5 — Investigation — Partially Implemented
 
 * Case templates
 * Evidence collection
@@ -1138,16 +1150,18 @@ Planned development includes:
 * Indicator analysis
 * Threat intelligence
 * Hunting
+* Completion of additional investigation cases
 
-## Phase 6 — Response
+## Phase 6 — Response — Foundation / Expanding
 
 * Response playbooks
 * Containment recommendations
 * Eradication recommendations
 * Recovery procedures
 * Lessons learned
+* Expanded response evidence
 
-## Phase 7 — Engineering Quality
+## Phase 7 — Engineering Quality — Partially Implemented
 
 * Automated testing
 * Regression testing
@@ -1155,13 +1169,32 @@ Planned development includes:
 * Dependency auditing
 * Security validation
 * Detection hardening
+* Continued adversarial validation
 
-## Phase 8 — Flagship Cases
+## Phase 8 — Flagship Cases — In Progress
 
-* CASE-001 through CASE-010
-* End-to-end investigation evidence
-* Professional reports
-* Detection improvements
+Implemented investigation workflows:
+
+* CASE-001 — Brute Force
+* CASE-003 — Suspicious PowerShell
+* CASE-004 — Suspicious Post-Authentication Privileged Session
+
+Implemented detection and alert evidence requiring investigation completion:
+
+* CASE-002 — Password Spraying
+* CASE-005 — Suspicious Network Activity
+* CASE-006 — Web Attack / SQL Injection
+
+Planned / scaffolded cases:
+
+* CASE-007 — File Integrity Violation
+* CASE-008 — Planned Future Investigation
+* CASE-009 — Linux Security Incident
+* CASE-010 — Multi-Stage Attack
+
+Remaining work includes completing end-to-end investigation evidence,
+professional reports, response playbooks, and detection improvements for
+the remaining cases.
 
 ---
 
