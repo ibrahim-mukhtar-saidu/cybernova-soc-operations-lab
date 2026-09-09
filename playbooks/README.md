@@ -2,117 +2,197 @@
 
 ## Purpose
 
-This directory contains structured SOC response playbooks for recurring security-alert and incident-investigation scenarios.
+This directory contains the controlled response playbook library for the CYBERNOVA SOC Operations Laboratory.
 
-The playbooks define repeatable procedures covering:
+The playbooks provide repeatable analyst procedures for validating alerts, preserving evidence, investigating activity, assessing indicators, applying MITRE ATT&CK context, evaluating containment and recovery options, validating detection coverage, and documenting final outcomes.
 
-```text
-Alert
-  ↓
-Validation
-  ↓
-Triage
-  ↓
-Evidence Preservation
-  ↓
-Investigation
-  ↓
-Threat Intelligence
-  ↓
-Response Decision
-  ↓
-Recovery
-  ↓
-Detection Improvement
-  ↓
-Closure
-```
+All procedures are designed for **authorized synthetic SOC laboratory environments**.
 
-The library is designed to support consistent analyst decision-making and to connect detection engineering with investigation and response procedures.
-
-All procedures are intended for authorized laboratory or appropriately controlled environments.
+They are intended to demonstrate practical SOC analyst workflow and detection-response engineering rather than claim production incident-response experience.
 
 ---
 
 ## Playbook Status
 
-| ID     | Scenario                   | Primary Detection | Status      |
-| ------ | -------------------------- | ----------------- | ----------- |
-| PB-001 | Brute-Force Authentication | DET-AUTH-001      | Implemented |
-
-Additional playbooks will be added as their procedures, validation evidence, and supporting detection coverage are completed.
+| ID     | Playbook                    | Primary Detection | Status      |
+| ------ | --------------------------- | ----------------- | ----------- |
+| PB-001 | Brute-Force Authentication  | DET-AUTH-001      | Implemented |
+| PB-002 | Password Spraying           | DET-AUTH-002      | Implemented |
+| PB-003 | Suspicious PowerShell       | DET-ENDPOINT-001  | Implemented |
+| PB-004 | Malware Execution           | DET-MALWARE-001   | Planned     |
+| PB-005 | Suspicious Network Activity | DET-NET-001       | Planned     |
+| PB-006 | Account Compromise          | DET-AUTH-003      | Planned     |
+| PB-007 | Linux Security Event        | DET-LINUX-001     | Planned     |
+| PB-008 | Web Attack                  | DET-WEB-001       | Planned     |
+| PB-009 | File Integrity Violation    | DET-HOST-001      | Planned     |
+| PB-010 | Multi-Stage Attack          | DET-CORR-001      | Planned     |
 
 ---
 
-## PB-001 — Brute-Force Authentication
+## Implemented Playbooks
 
-**File:**
+### PB-001 — Brute-Force Authentication
+
+**File**
+
+`PB-001-brute-force-authentication.md`
+
+**Primary detection**
+
+`DET-AUTH-001`
+
+**Related flagship case**
+
+`CASE-001`
+
+**Coverage**
+
+* Alert validation
+* Authentication triage
+* Source-IP investigation
+* Account investigation
+* Post-authentication review
+* Evidence preservation
+* Threat-intelligence assessment
+* MITRE ATT&CK mapping
+* Containment considerations
+* Eradication and recovery considerations
+* Detection validation
+* False-positive review
+* Escalation and closure
+* Laboratory validation
+
+---
+
+### PB-002 — Password Spraying
+
+**File**
+
+`PB-002-password-spraying.md`
+
+**Primary detection**
+
+`DET-AUTH-002`
+
+**Related flagship case**
+
+`CASE-002`
+
+**Coverage**
+
+* Alert validation
+* Authentication data-quality review
+* Distinct-user analysis
+* Source-IP investigation
+* Account investigation
+* Successful-authentication review
+* Post-authentication correlation
+* Timeline construction
+* Indicator handling
+* Threat-intelligence assessment
+* MITRE ATT&CK mapping
+* False-positive review
+* Containment considerations
+* Detection validation
+* Adversarial detection review
+* Escalation and closure
+* Laboratory validation
+
+---
+
+### PB-003 — Suspicious PowerShell
+
+**File**
+
+`PB-003-suspicious-powershell.md`
+
+**Primary detection**
+
+`DET-ENDPOINT-001`
+
+**Related flagship case**
+
+`CASE-003`
+
+**Coverage**
+
+* Alert validation
+* Evidence authenticity
+* Command-line preservation
+* PowerShell command analysis
+* Encoded-command review
+* Obfuscation analysis
+* Parent/child process investigation
+* User and host investigation
+* Timeline construction
+* Network investigation
+* File investigation
+* Persistence investigation
+* Malware-analysis correlation
+* Authentication correlation
+* Related detection investigation
+* Indicator handling
+* Threat-intelligence assessment
+* MITRE ATT&CK mapping
+* False-positive review
+* Download-and-execute analysis
+* Security-control modification review
+* Containment considerations
+* Eradication and recovery considerations
+* Detection validation
+* Evasion and adversarial review
+* Threat hunting
+* Cross-project investigation
+* Evidence classification
+* Escalation and closure
+* Laboratory validation
+
+---
+
+## Investigation Escalation Context
+
+The playbook library is designed to support progressive investigation rather than treating every alert as an isolated event.
+
+A typical escalation path can include:
 
 ```text
-PB-001-brute-force-authentication.md
-```
-
-**Primary detection:**
-
-```text
-DET-AUTH-001
-SSH Brute-Force Authentication Detection
-```
-
-**Related investigation:**
-
-```text
-CASE-001
-```
-
-### Purpose
-
-Provides a repeatable workflow for investigating suspected brute-force authentication activity.
-
-The playbook covers:
-
-* alert validation;
-* triage;
-* evidence preservation;
-* authentication investigation;
-* source-IP investigation;
-* account investigation;
-* post-authentication investigation;
-* related-detection analysis;
-* threat-intelligence assessment;
-* MITRE ATT&CK context;
-* containment decision-making;
-* eradication planning;
-* recovery planning;
-* detection validation;
-* false-positive analysis;
-* escalation;
-* closure; and
-* detection-improvement feedback.
-
-### Escalation Context
-
-Brute-force activity should receive increased investigative priority when accompanied by evidence such as:
-
-```text
+Authentication Anomaly
+        |
+        v
 Repeated Authentication Failures
-        ↓
+        |
+        v
 Successful Authentication
-        ↓
+        |
+        v
 Privileged Session
-        ↓
+        |
+        v
 Post-Authentication Activity
-        ↓
+        |
+        v
 Persistence / Malware / Network Activity
+        |
+        v
+Multi-Stage Correlation
 ```
 
-A multi-stage sequence may be escalated to the SOC correlation workflow when the evidence satisfies the applicable correlation requirements.
+The presence of a later-stage indicator does not automatically prove compromise.
+
+Analysts must validate the evidence chain and distinguish:
+
+* Observed evidence
+* Detection output
+* Analyst interpretation
+* Hypothesis
+* Confirmed evidence
+* Unknown or unverified activity
 
 ---
 
 ## Evidence Standards
 
-Playbook execution should preserve traceability between:
+Every playbook should preserve traceability between:
 
 ```text
 Telemetry
@@ -123,122 +203,274 @@ Alert
    ↓
 Triage
    ↓
-Investigation
+Evidence
+   ↓
+Timeline
+   ↓
+Indicators
+   ↓
+Threat Intelligence
+   ↓
+Hunting
+   ↓
+MITRE ATT&CK
    ↓
 Response Decision
    ↓
-Closure
+Impact Assessment
+   ↓
+Detection Improvement
+   ↓
+Regression Test
 ```
 
-Where applicable, analysts should preserve:
-
-* alert identifiers;
-* detection identifiers and versions;
-* supporting event identifiers;
-* timestamps;
-* hosts;
-* users;
-* source and destination information;
-* relevant commands;
-* indicators;
-* investigation notes;
-* response decisions;
-* detection-improvement findings.
+Evidence should remain attributable to the original synthetic telemetry whenever possible.
 
 ---
 
 ## Laboratory Boundaries
 
-The CYBERNOVA SOC Operations Laboratory uses synthetic and controlled telemetry.
+This repository is a cybersecurity laboratory.
 
-The playbooks therefore do **not** claim:
+The playbooks:
 
-* production SOC operations;
-* real customer incidents;
-* real-world containment actions;
-* professional incident-response employment;
-* enterprise-scale detection coverage;
-* real attacker attribution; or
-* real-world threat-intelligence findings without appropriate external evidence.
+* Use authorized synthetic telemetry.
+* Avoid real credentials and production secrets.
+* Do not represent real customer incidents.
+* Do not claim professional SOC employment.
+* Do not claim production incident-response activity.
+* Do not establish real-world compromise.
+* Do not perform destructive containment or remediation against third-party systems.
+* Treat external threat intelligence as unverified unless explicitly enriched and documented.
+* Distinguish laboratory observations from analyst inference.
 
-Production response actions described in a playbook are response options or procedures unless explicitly documented as performed in an authorized environment.
+Any containment, eradication, or recovery procedure must be interpreted within an authorized laboratory environment.
 
 ---
 
-## Planned Library
+## Planned Playbook Library
 
-The following scenarios are planned for future playbooks as their detection coverage and investigation evidence mature:
+### PB-004 — Malware Execution
 
-```text
-PB-002  Password Spraying
-PB-003  Suspicious PowerShell
-PB-004  Malware Execution
-PB-005  Suspicious Network Activity
-PB-006  Account Compromise
-PB-007  Linux Security Event
-PB-008  Web Attack
-PB-009  File Integrity Violation
-PB-010  Multi-Stage Attack
-```
+Primary detection:
 
-The numbering of playbooks is independent of the CASE-001 through CASE-010 investigation taxonomy.
+`DET-MALWARE-001`
 
-A playbook should not be marked implemented until its procedure, supporting detection context, validation requirements, and laboratory limitations are documented.
+Planned focus:
+
+* Malware execution triage
+* Process and file evidence
+* Hash handling
+* YARA correlation
+* IOC extraction
+* Malware-analysis sandbox integration
+* Persistence review
+* Network correlation
+* Detection validation
+
+---
+
+### PB-005 — Suspicious Network Activity
+
+Primary detection:
+
+`DET-NET-001`
+
+Planned focus:
+
+* Beaconing analysis
+* Connection timing
+* Source/destination investigation
+* Network indicators
+* DNS/network correlation
+* Threat-intelligence assessment
+* Hunting
+* Detection improvement
+
+---
+
+### PB-006 — Account Compromise
+
+Primary detection:
+
+`DET-AUTH-003`
+
+Planned focus:
+
+* Authentication sequence analysis
+* Privileged-session investigation
+* Account activity
+* Session correlation
+* Post-authentication commands
+* Credential abuse hypotheses
+* Detection and response feedback
+
+---
+
+### PB-007 — Linux Security Event
+
+Primary detection:
+
+`DET-LINUX-001`
+
+Planned focus:
+
+* Linux persistence
+* Cron activity
+* Process and command analysis
+* File-path investigation
+* Download-and-execute activity
+* Host investigation
+* ATT&CK persistence mapping
+
+---
+
+### PB-008 — Web Attack
+
+Primary detection:
+
+`DET-WEB-001`
+
+Planned focus:
+
+* Suspicious web requests
+* SQL injection analysis
+* Request indicators
+* Source investigation
+* Application-layer evidence
+* Web attack hunting
+* Detection validation
+
+---
+
+### PB-009 — File Integrity Violation
+
+Primary detection:
+
+`DET-HOST-001`
+
+Planned focus:
+
+* Modified/created/deleted file analysis
+* Host investigation
+* File-path validation
+* Change correlation
+* Persistence and malware correlation
+* False-positive review
+* Detection improvement
+
+---
+
+### PB-010 — Multi-Stage Attack
+
+Primary detection:
+
+`DET-CORR-001`
+
+Related flagship case:
+
+`CASE-010`
+
+Planned focus:
+
+* Multi-stage correlation
+* Cross-detection evidence
+* Chronological validation
+* Shared investigation pivots
+* Authentication → post-authentication → persistence
+* Supporting-alert traceability
+* ATT&CK chain analysis
+* End-to-end response workflow
 
 ---
 
 ## Quality Expectations
 
-Each completed playbook should provide:
+Every completed playbook should aim to provide:
 
-1. Purpose
-2. Trigger
+1. Clear purpose
+2. Explicit trigger
 3. Severity guidance
 4. Alert validation
-5. Triage
-6. Evidence preservation
-7. Investigation procedure
-8. Threat-intelligence guidance
-9. ATT&CK context where appropriate
-10. Containment considerations
-11. Eradication considerations
-12. Recovery considerations
-13. Detection validation
-14. False-positive considerations
-15. Escalation criteria
-16. Closure criteria
-17. Required evidence
-18. Laboratory validation
-19. Operational checklist
-20. Scope and limitations
+5. Evidence validation
+6. Repeatable triage
+7. Investigation pivots
+8. Timeline methodology
+9. Indicator handling
+10. Threat-intelligence boundaries
+11. MITRE ATT&CK context
+12. False-positive analysis
+13. Containment considerations
+14. Eradication considerations
+15. Recovery considerations
+16. Detection validation
+17. Adversarial review
+18. Hunting guidance
+19. Escalation criteria
+20. Closure criteria
+21. Required evidence
+22. Laboratory validation
+23. Scope limitations
+24. Detection-engineering feedback
 
-The objective is to create reusable analyst procedures rather than scenario-specific notes.
+A playbook should not merely describe what an analyst could do.
+
+It should demonstrate a **repeatable evidence-driven workflow**.
 
 ---
 
-## Detection Engineering Feedback
+## Detection Engineering Feedback Loop
 
-Playbooks are part of the SOC detection feedback loop:
+Investigation results should feed back into detection engineering:
 
 ```text
-Detection
-    ↓
-Alert
-    ↓
 Investigation
-    ↓
-Weakness Identified
-    ↓
+     ↓
+Observed Weakness
+     ↓
 Detection Improvement
-    ↓
-Regression Test
-    ↓
-Validation
-    ↓
-Updated Detection
+     ↓
+New Test Case
+     ↓
+Regression Validation
+     ↓
+Detection Release
+     ↓
+Updated Playbook
 ```
 
-Investigation findings should be converted into actionable detection-engineering improvements whenever appropriate.
+This creates a continuous defensive engineering cycle instead of treating detection and response as separate activities.
+
+---
+
+## Portfolio Evidence
+
+The playbook library supports the broader SOC portfolio evidence chain:
+
+```text
+Event
+ → Detect
+ → Alert
+ → Triage
+ → Validate
+ → Investigate
+ → Timeline
+ → Indicators
+ → Threat Intelligence
+ → Hunting
+ → ATT&CK
+ → Severity
+ → Response
+ → Impact
+ → Final Report
+ → Detection Improvement
+ → Test
+ → Security Validation
+ → Documentation
+ → GitHub Evidence
+```
+
+The objective is to demonstrate practical SOC reasoning, traceability, defensive engineering, and disciplined documentation.
 
 ---
 
@@ -246,6 +478,6 @@ Investigation findings should be converted into actionable detection-engineering
 
 **Ibrahim Mukhtar Saidu**
 
-CYBERNOVA SOC Operations Laboratory
+Cybersecurity / SOC Laboratory Project Developer
 
-This repository represents hands-on cybersecurity and SOC laboratory work conducted in controlled environments.
+All activity represented by this repository is laboratory-based unless explicitly stated otherwise.
