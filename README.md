@@ -1071,35 +1071,41 @@ This creates a feedback loop between SOC analysis and detection engineering.
 
 **Current Phase:** Implementation & Validation
 
-The laboratory foundation is established and the repository now contains implemented
-detection pipelines, controlled security telemetry, alert validation, investigation
-workflows, automated tests, security-validation practices, and portfolio evidence.
+The laboratory foundation is established and the repository contains implemented
+SOC workflows covering controlled telemetry, detection, alert validation,
+investigation, threat hunting, threat intelligence, incident response,
+playbooks, correlation, automated testing, security validation, and portfolio
+evidence.
 
 Implemented capabilities currently include:
 
 1. Laboratory architecture and governance
 2. Threat model and evidence-integrity standards
-3. Authentication, endpoint, network, and web telemetry
-4. Authentication, endpoint, network, and web detections
-5. Alert generation and validation
-6. CASE-001, CASE-003, and CASE-004 investigation workflows
-7. Controlled evidence and portfolio documentation
-8. Automated regression testing
-9. Security validation and defensive engineering review
-10. Threat-hunting and incident-response workflow foundations
+3. Controlled authentication, endpoint, network, and web telemetry
+4. Detection engineering and alert-generation workflows
+5. Alert validation and triage workflow foundations
+6. Ten documented SOC investigation cases (CASE-001 through CASE-010)
+7. Ten response playbooks (PB-001 through PB-010)
+8. Timeline reconstruction, indicator analysis, hunting, and threat intelligence
+9. Incident-response guidance, lessons learned, and final reporting
+10. Multi-stage attack correlation across existing detection stages
+11. Automated regression testing and security-validation practices
+12. Portfolio evidence and reproducible laboratory documentation
 
-Remaining development focuses on expanding investigation coverage, completing
-additional playbooks and flagship cases, strengthening detection feedback loops,
-adding genuinely measurable laboratory metrics where supported, and continuing
-adversarial validation and engineering hardening.
+The current laboratory state represents a completed operational foundation for
+the documented SOC scenarios. Remaining development focuses on expanding
+detection coverage, strengthening detection feedback loops, extending
+cross-project integration, adding genuinely measurable laboratory metrics where
+supported, continuing adversarial validation, and maintaining engineering
+hardening.
 
 ---
 
 # Roadmap
 
 The roadmap reflects the current implementation state of the laboratory.
-Completed and implemented capabilities are distinguished from areas that
-remain under active development.
+Completed capabilities are distinguished from areas that remain under active
+development.
 
 ## Phase 1 — Foundation — Complete
 
@@ -1137,7 +1143,7 @@ remain under active development.
 * Case creation
 * Expanded alert-operation evidence
 
-## Phase 5 — Investigation — Partially Implemented
+## Phase 5 — Investigation — Implemented
 
 * Case templates
 * Evidence collection
@@ -1145,30 +1151,32 @@ remain under active development.
 * Indicator analysis
 * Threat intelligence
 * Hunting
-* Completion of additional investigation cases
+* Ten documented investigation cases
+* Final assessment and lessons learned
 
-## Phase 6 — Response — Foundation / Expanding
+## Phase 6 — Response — Implemented / Evidence-Based
 
 * Response playbooks
 * Containment recommendations
 * Eradication recommendations
 * Recovery procedures
 * Lessons learned
-* Expanded response evidence
+* Case-specific response guidance
+* Evidence-based response documentation
 
-## Phase 7 — Engineering Quality — Partially Implemented
+## Phase 7 — Engineering Quality — Implemented / Validated
 
 * Automated testing
 * Regression testing
-* Static analysis
+* Static-analysis and validation practices
 * Dependency auditing
 * Security validation
 * Detection hardening
-* Continued adversarial validation
+* Adversarial validation
 
-## Phase 8 — Flagship Cases — In Progress
+## Phase 8 — Flagship Cases — Complete
 
-Implemented end-to-end investigation workflows:
+The laboratory contains ten documented end-to-end investigation workflows:
 
 * CASE-001 — Brute Force
 * CASE-002 — Password Spraying
@@ -1186,10 +1194,10 @@ investigation, timeline reconstruction, indicators, threat intelligence,
 hunting, response, lessons learned, and final reporting. CASE-010 additionally
 demonstrates multi-stage correlation across existing detection stages.
 
-Remaining work focuses on strengthening detection feedback loops, cross-project
-integration, measurable laboratory metrics where genuinely supported,
-adversarial validation, engineering hardening, and final hiring-oriented
-evidence.
+Future development is focused on improving detection coverage, strengthening
+feedback loops, cross-project integration, measurable laboratory metrics where
+genuinely supported, continued adversarial validation, engineering hardening,
+and final hiring-oriented evidence.
 
 ---
 
