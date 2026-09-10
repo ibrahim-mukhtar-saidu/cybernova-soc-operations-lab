@@ -1168,28 +1168,28 @@ remain under active development.
 
 ## Phase 8 — Flagship Cases — In Progress
 
-Implemented investigation workflows:
+Implemented end-to-end investigation workflows:
 
 * CASE-001 — Brute Force
+* CASE-002 — Password Spraying
 * CASE-003 — Suspicious PowerShell
 * CASE-004 — Suspicious Post-Authentication Privileged Session
-
-Implemented detection and alert evidence requiring investigation completion:
-
-* CASE-002 — Password Spraying
 * CASE-005 — Suspicious Network Activity
 * CASE-006 — Web Attack / SQL Injection
-
-Planned / scaffolded cases:
-
 * CASE-007 — File Integrity Violation
-* CASE-008 — Planned Future Investigation
+* CASE-008 — Malware Execution
 * CASE-009 — Linux Security Incident
-* CASE-010 — Multi-Stage Attack
+* CASE-010 — Multi-Stage Attack / End-to-End SOC Investigation
 
-Remaining work includes completing end-to-end investigation evidence,
-professional reports, response playbooks, and detection improvements for
-the remaining cases.
+Each implemented case contains controlled laboratory evidence covering
+investigation, timeline reconstruction, indicators, threat intelligence,
+hunting, response, lessons learned, and final reporting. CASE-010 additionally
+demonstrates multi-stage correlation across existing detection stages.
+
+Remaining work focuses on strengthening detection feedback loops, cross-project
+integration, measurable laboratory metrics where genuinely supported,
+adversarial validation, engineering hardening, and final hiring-oriented
+evidence.
 
 ---
 
